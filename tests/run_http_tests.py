@@ -9,19 +9,27 @@ import socket
 import time
 import urllib.error
 import urllib.request
+from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 DEFAULT_BASE_URL = "http://localhost:4221"
 TEST_TEMP_DIR = ".http-test-artifacts"
 
 
-def ensure_temp_storage():
+def ensure_temp_storage() -> str:
     """Create the temp artifact directory if needed and return its path."""
     os.makedirs(TEST_TEMP_DIR, exist_ok=True)
     return TEST_TEMP_DIR
 
 
-def http_request(path, *, method="GET", data=None, headers=None, base_url=None):
+def http_request(
+    path: str,
+    *,
+    method: str = "GET",
+    data: Optional[str | bytes] = None,
+    headers: Optional[Dict[str, str]] = None,
+    base_url: Optional[str] = None,
+) -> Tuple[int, bytes, Dict[str, str]]:
     """Send an HTTP request and return status, body, and headers."""
     target = f"{base_url or DEFAULT_BASE_URL}{path}"
     payload = data.encode() if isinstance(data, str) else data
@@ -32,7 +40,7 @@ def http_request(path, *, method="GET", data=None, headers=None, base_url=None):
         return response.status, response.read(), dict(response.headers)
 
 
-def run_smoke_tests(base_url):
+def run_smoke_tests(base_url: str) -> None:
     """Validate echo, gzip, user-agent, and file routes."""
     print("Running smoke tests...")
     status, body, _ = http_request("/", base_url=base_url)
@@ -82,7 +90,7 @@ def run_smoke_tests(base_url):
     print("Smoke tests passed")
 
 
-def run_persistent_connection_test(base_url):
+def run_persistent_connection_test(base_url: str) -> None:
     """Verify that multiple requests can be sent over the same socket."""
     print("Running persistent connection test...")
     parsed = urlparse(base_url or DEFAULT_BASE_URL)
@@ -104,7 +112,7 @@ def run_persistent_connection_test(base_url):
     print("Persistent connection test passed")
 
 
-def run_large_body_test(base_url):
+def run_large_body_test(base_url: str) -> None:
     """Verify handling of large file uploads and downloads."""
     print("Running large body test...")
     ensure_temp_storage()
@@ -138,11 +146,11 @@ def run_large_body_test(base_url):
     print("Large body test passed")
 
 
-def run_parallel_requests(total, workers, path, base_url):
+def run_parallel_requests(total: int, workers: int, path: str, base_url: str) -> Tuple[float, int, float]:
     """Execute identical requests concurrently and collect stats."""
     start = time.perf_counter()
 
-    def fetch(_):
+    def fetch(_: int) -> bool:
         try:
             status, _, _ = http_request(path, base_url=base_url)
             return status == 200
@@ -160,7 +168,7 @@ def run_parallel_requests(total, workers, path, base_url):
     return duration, errors, rps
 
 
-def run_load_tests(base_url):
+def run_load_tests(base_url: str) -> None:
     """Measure performance across low to very-high scenarios."""
     scenarios = [
         ("low", 20, 1),
@@ -185,7 +193,7 @@ def run_load_tests(base_url):
     print("Load tests passed")
 
 
-def run_stress_tests(base_url):
+def run_stress_tests(base_url: str) -> None:
     """Apply higher volumes and concurrency to find failure thresholds."""
     levels = [
         ("2k", 2000, 50),
@@ -210,7 +218,7 @@ def run_stress_tests(base_url):
     print("Stress tests passed")
 
 
-def main():
+def main() -> None:
     """Parse CLI arguments and run the requested test suites."""
     parser = argparse.ArgumentParser(description="Exercise the HTTP server endpoints.")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)

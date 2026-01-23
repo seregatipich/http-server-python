@@ -6,7 +6,7 @@ import socket
 import sys
 import threading
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Iterable, Iterator, Optional, Tuple
 
 HEADER_DELIMITER = b"\r\n\r\n"
 
@@ -17,7 +17,7 @@ class HttpRequest:
 
     method: str
     path: str
-    headers: dict
+    headers: dict[str, str]
     body: bytes
 
 
@@ -26,14 +26,14 @@ class HttpResponse:
     """Represents an HTTP response to be sent to a client."""
 
     status_line: str
-    headers: dict
+    headers: dict[str, str]
     body: bytes
     close_connection: bool
     body_iter: Optional[Iterable[bytes]] = None
     use_chunked: bool = False
 
 
-def handle_client(client_socket, directory):
+def handle_client(client_socket: socket.socket, directory: str) -> None:
     """Process requests on a client socket until the connection is closed."""
     buffer = b""
     try:
@@ -51,7 +51,9 @@ def handle_client(client_socket, directory):
         client_socket.close()
 
 
-def receive_request(client_socket, buffer):
+def receive_request(
+    client_socket: socket.socket, buffer: bytes
+) -> Tuple[Optional[HttpRequest], bytes]:
     """Read bytes from the socket until a complete request is available."""
     while HEADER_DELIMITER not in buffer:
         chunk = client_socket.recv(4096)
@@ -74,7 +76,7 @@ def receive_request(client_socket, buffer):
     return HttpRequest(method, path, headers, body), leftover
 
 
-def parse_headers(lines):
+def parse_headers(lines: Iterable[str]) -> dict[str, str]:
     """Convert raw header lines into a lowercase-keyed dictionary."""
     parsed = {}
     for line in lines:
@@ -84,7 +86,7 @@ def parse_headers(lines):
     return parsed
 
 
-def build_response(request, directory):
+def build_response(request: HttpRequest, directory: str) -> HttpResponse:
     """Route the request to the appropriate handler and return a response."""
     if request.path == "/":
         return empty_response(request)
@@ -98,12 +100,12 @@ def build_response(request, directory):
     return not_found_response(request)
 
 
-def empty_response(request):
+def empty_response(request: HttpRequest) -> HttpResponse:
     """Return a 200 OK response with no body."""
     return HttpResponse("HTTP/1.1 200 OK", {}, b"", should_close(request.headers))
 
 
-def text_response(message, request):
+def text_response(message: str, request: HttpRequest) -> HttpResponse:
     """Return a text/plain response, compressing when appropriate."""
     payload = message.encode()
     payload, headers = compress_if_gzip_supported(payload, request.headers)
@@ -111,7 +113,7 @@ def text_response(message, request):
     return HttpResponse("HTTP/1.1 200 OK", base_headers, payload, should_close(request.headers))
 
 
-def file_response(request, directory):
+def file_response(request: HttpRequest, directory: str) -> HttpResponse:
     """Serve or write a file based on the HTTP method."""
     filename = request.path[7:]
     filepath = os.path.join(directory, filename)
@@ -134,7 +136,7 @@ def file_response(request, directory):
     return not_found_response(request)
 
 
-def stream_file(filepath, chunk_size=65536):
+def stream_file(filepath: str, chunk_size: int = 65536) -> Iterator[bytes]:
     """Yield file contents in fixed-size chunks for streaming responses."""
     with open(filepath, "rb") as file_handle:
         while True:
@@ -144,30 +146,30 @@ def stream_file(filepath, chunk_size=65536):
             yield chunk
 
 
-def not_found_response(request):
+def not_found_response(request: HttpRequest) -> HttpResponse:
     """Return a 404 response reusing the connection preference."""
     return HttpResponse("HTTP/1.1 404 Not Found", {}, b"", should_close(request.headers))
 
 
-def compress_if_gzip_supported(payload, headers):
+def compress_if_gzip_supported(payload: bytes, headers: dict[str, str]) -> Tuple[bytes, dict[str, str]]:
     """Compress the payload when the request advertises gzip support."""
     if not accepts_gzip(headers):
         return payload, {}
     return gzip.compress(payload), {"Content-Encoding": "gzip"}
 
 
-def accepts_gzip(headers):
+def accepts_gzip(headers: dict[str, str]) -> bool:
     """Return True when the Accept-Encoding header includes gzip."""
     encodings = headers.get("accept-encoding", "")
     return any(value.strip() == "gzip" for value in encodings.split(","))
 
 
-def should_close(headers):
+def should_close(headers: dict[str, str]) -> bool:
     """Determine whether the connection should be closed after responding."""
     return headers.get("connection", "").lower() == "close"
 
 
-def send_response(client_socket, response):
+def send_response(client_socket: socket.socket, response: HttpResponse) -> None:
     """Serialize and send the HTTP response over the socket."""
     headers = dict(response.headers)
     if response.use_chunked:
@@ -193,7 +195,7 @@ def send_response(client_socket, response):
         client_socket.sendall(header_block + response.body)
 
 
-def main():
+def main() -> None:
     """Start the HTTP server and spawn worker threads per connection."""
     directory = "."
     if "--directory" in sys.argv:
