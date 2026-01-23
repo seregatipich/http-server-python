@@ -151,7 +151,9 @@ def not_found_response(request: HttpRequest) -> HttpResponse:
     return HttpResponse("HTTP/1.1 404 Not Found", {}, b"", should_close(request.headers))
 
 
-def compress_if_gzip_supported(payload: bytes, headers: dict[str, str]) -> Tuple[bytes, dict[str, str]]:
+def compress_if_gzip_supported(
+    payload: bytes, headers: dict[str, str]
+) -> Tuple[bytes, dict[str, str]]:
     """Compress the payload when the request advertises gzip support."""
     if not accepts_gzip(headers):
         return payload, {}
