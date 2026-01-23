@@ -1,4 +1,4 @@
-# (НЕ ГОВНОКОД) HTTP Server
+# HTTP Server
 
 Python HTTP server supporting echo, user-agent inspection, gzip, and basic file IO endpoints. Designed for local experimentation without external dependencies.
 
@@ -8,6 +8,7 @@ Python HTTP server supporting echo, user-agent inspection, gzip, and basic file 
 - **Dynamic Routing**: Built-in handlers for echo, user-agent, and file operations.
 - **Compression**: Automatic `gzip` compression when `Accept-Encoding: gzip` is present.
 - **File Storage**: Configurable root directory for file uploads and downloads.
+- **Chunked Streaming**: Large file downloads stream via `Transfer-Encoding: chunked` to avoid buffering entire payloads.
 
 ## Requirements
 

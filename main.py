@@ -1,4 +1,4 @@
-"""(НЕ ГОВНОКОД) HTTP server supporting echo, user-agent, and file operations."""
+"""HTTP server supporting echo, user-agent, and file operations."""
 
 import gzip
 import os
@@ -6,6 +6,7 @@ import socket
 import sys
 import threading
 from dataclasses import dataclass
+from typing import Iterable, Optional
 
 HEADER_DELIMITER = b"\r\n\r\n"
 
@@ -28,6 +29,8 @@ class HttpResponse:
     headers: dict
     body: bytes
     close_connection: bool
+    body_iter: Optional[Iterable[bytes]] = None
+    use_chunked: bool = False
 
 
 def handle_client(client_socket, directory):
@@ -114,16 +117,31 @@ def file_response(request, directory):
     filepath = os.path.join(directory, filename)
     if request.method == "GET":
         if os.path.exists(filepath):
-            with open(filepath, "rb") as file_handle:
-                payload = file_handle.read()
             headers = {"Content-Type": "application/octet-stream"}
-            return HttpResponse("HTTP/1.1 200 OK", headers, payload, should_close(request.headers))
+            return HttpResponse(
+                "HTTP/1.1 200 OK",
+                headers,
+                b"",
+                should_close(request.headers),
+                body_iter=stream_file(filepath),
+                use_chunked=True,
+            )
         return not_found_response(request)
     if request.method == "POST":
         with open(filepath, "wb") as file_handle:
             file_handle.write(request.body)
         return HttpResponse("HTTP/1.1 201 Created", {}, b"", should_close(request.headers))
     return not_found_response(request)
+
+
+def stream_file(filepath, chunk_size=65536):
+    """Yield file contents in fixed-size chunks for streaming responses."""
+    with open(filepath, "rb") as file_handle:
+        while True:
+            chunk = file_handle.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
 
 
 def not_found_response(request):
@@ -152,13 +170,27 @@ def should_close(headers):
 def send_response(client_socket, response):
     """Serialize and send the HTTP response over the socket."""
     headers = dict(response.headers)
-    headers["Content-Length"] = str(len(response.body))
+    if response.use_chunked:
+        headers["Transfer-Encoding"] = "chunked"
+    else:
+        headers["Content-Length"] = str(len(response.body))
     if response.close_connection:
         headers["Connection"] = "close"
     header_lines = [response.status_line]
     header_lines.extend(f"{name}: {value}" for name, value in headers.items())
-    message = "\r\n".join(header_lines).encode() + b"\r\n\r\n" + response.body
-    client_socket.sendall(message)
+    header_block = "\r\n".join(header_lines).encode() + b"\r\n\r\n"
+    if response.use_chunked and response.body_iter is not None:
+        client_socket.sendall(header_block)
+        for chunk in response.body_iter:
+            if not chunk:
+                continue
+            size_line = f"{len(chunk):X}\r\n".encode()
+            client_socket.sendall(size_line)
+            client_socket.sendall(chunk)
+            client_socket.sendall(b"\r\n")
+        client_socket.sendall(b"0\r\n\r\n")
+    else:
+        client_socket.sendall(header_block + response.body)
 
 
 def main():
