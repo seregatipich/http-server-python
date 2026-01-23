@@ -1,4 +1,4 @@
-"""(Тоже не говно код) script to exercise the HTTP server via smoke, load, and stress tests."""
+"""Script to exercise the HTTP server via smoke, load, and stress tests."""
 
 import argparse
 import concurrent.futures
@@ -101,13 +101,17 @@ def run_persistent_connection_test(base_url: str) -> None:
         sock.sendall(b"GET /echo/first HTTP/1.1\r\nHost: localhost\r\n\r\n")
         response1 = sock.recv(4096)
         if b"HTTP/1.1 200 OK" not in response1 or b"first" not in response1:
-            raise RuntimeError(f"Persistent connection failed on first request: {response1[:50]}")
+            raise RuntimeError(
+                f"Persistent connection failed on first request: {response1[:50]}"
+            )
 
         # Request 2
         sock.sendall(b"GET /echo/second HTTP/1.1\r\nHost: localhost\r\n\r\n")
         response2 = sock.recv(4096)
         if b"HTTP/1.1 200 OK" not in response2 or b"second" not in response2:
-            raise RuntimeError(f"Persistent connection failed on second request: {response2[:50]}")
+            raise RuntimeError(
+                f"Persistent connection failed on second request: {response2[:50]}"
+            )
 
     print("Persistent connection test passed")
 
@@ -146,7 +150,9 @@ def run_large_body_test(base_url: str) -> None:
     print("Large body test passed")
 
 
-def run_parallel_requests(total: int, workers: int, path: str, base_url: str) -> Tuple[float, int, float]:
+def run_parallel_requests(
+    total: int, workers: int, path: str, base_url: str
+) -> Tuple[float, int, float]:
     """Execute identical requests concurrently and collect stats."""
     start = time.perf_counter()
 
