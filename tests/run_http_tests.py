@@ -69,9 +69,11 @@ def run_smoke_tests(base_url):
     )
     if status != 201:
         raise RuntimeError("File upload failed")
-    status, body, _ = http_request(f"/files/{temp_path}", base_url=base_url)
+    status, body, headers = http_request(f"/files/{temp_path}", base_url=base_url)
     if status != 200 or body.decode() != payload:
         raise RuntimeError("File download mismatch")
+    if headers.get("Transfer-Encoding") != "chunked":
+        raise RuntimeError("File download did not use chunked transfer")
 
     stored_file = os.path.join(TEST_TEMP_DIR, filename)
     if os.path.exists(stored_file):
@@ -122,9 +124,11 @@ def run_large_body_test(base_url):
         raise RuntimeError(f"Large file upload failed with status {status}")
 
     # GET large file
-    status, body, _ = http_request(f"/files/{temp_path}", base_url=base_url)
+    status, body, headers = http_request(f"/files/{temp_path}", base_url=base_url)
     if status != 200 or body != payload:
         raise RuntimeError(f"Large file download mismatch (size: {len(body)})")
+    if headers.get("Transfer-Encoding") != "chunked":
+        raise RuntimeError("Large file download did not use chunked transfer")
 
     # Cleanup
     stored_file = os.path.join(TEST_TEMP_DIR, filename)
