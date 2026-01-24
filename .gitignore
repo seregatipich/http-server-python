@@ -36,3 +36,4 @@ htmlcov/
 Thumbs.db
 
 .http-test-artifacts/
+.pytest_cache/

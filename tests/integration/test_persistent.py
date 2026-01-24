@@ -1,3 +1,5 @@
+"""Integration tests for persistent connection handling."""
+
 from __future__ import annotations
 
 import socket
@@ -10,6 +12,8 @@ pytestmark = pytest.mark.integration
 
 
 def build_request(path: str, host: str, port: int, connection: str | None = None) -> bytes:
+    """Construct a GET request optionally specifying the Connection header."""
+
     lines = [
         f"GET {path} HTTP/1.1",
         f"Host: {host}:{port}",
@@ -21,6 +25,8 @@ def build_request(path: str, host: str, port: int, connection: str | None = None
 
 
 def test_multiple_requests_share_connection(server_process):
+    """Multiple sequential requests should reuse a single TCP connection."""
+
     host = server_process["host"]
     port = server_process["port"]
 

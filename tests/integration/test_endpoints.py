@@ -1,3 +1,5 @@
+"""Integration tests exercising the public HTTP endpoints."""
+
 from __future__ import annotations
 
 import gzip
@@ -10,18 +12,24 @@ pytestmark = pytest.mark.integration
 
 
 def test_root_endpoint_returns_empty_body(base_url):
+    """Root should respond with an empty payload."""
+
     response = requests.get(f"{base_url}/", timeout=5)
     assert response.status_code == 200
     assert response.content == b""
 
 
 def test_echo_endpoint_round_trips_payload(base_url):
+    """Echo path should round-trip the payload unmodified."""
+
     response = requests.get(f"{base_url}/echo/sample", timeout=5)
     assert response.status_code == 200
     assert response.text == "sample"
 
 
 def test_user_agent_endpoint_reflects_header(base_url):
+    """User-agent endpoint must mirror the request header."""
+
     headers = {"User-Agent": "pytest-agent"}
     response = requests.get(f"{base_url}/user-agent", headers=headers, timeout=5)
     assert response.status_code == 200
@@ -29,6 +37,8 @@ def test_user_agent_endpoint_reflects_header(base_url):
 
 
 def test_echo_responds_with_gzip_when_requested(base_url):
+    """Echo should gzip payloads when the client opts in."""
+
     headers = {"Accept-Encoding": "gzip"}
     with requests.get(
         f"{base_url}/echo/zip",
@@ -44,6 +54,8 @@ def test_echo_responds_with_gzip_when_requested(base_url):
 
 
 def test_file_round_trip_uses_chunked_transfer(base_url, server_process):
+    """Uploading a file then reading it back should use chunked transfer."""
+
     filename = "payload.txt"
     payload = b"file-body"
     post_response = requests.post(

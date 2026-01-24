@@ -19,8 +19,8 @@ Python HTTP server supporting echo, user-agent inspection, gzip, and basic file 
 ## Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 ```
 
 ## Usage

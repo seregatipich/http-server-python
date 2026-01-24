@@ -1,3 +1,5 @@
+"""Shared pytest fixtures for integration and unit tests."""
+
 from __future__ import annotations
 
 import subprocess
@@ -15,15 +17,19 @@ SERVER_ENTRYPOINT = PROJECT_ROOT / "main.py"
 
 @pytest.fixture(scope="session")
 def project_root() -> Path:
+    """Expose the repository root path to tests."""
+
     return PROJECT_ROOT
 
 
-@pytest.fixture()
-def server_process(tmp_path_factory) -> Generator[Dict[str, object], None, None]:
+@pytest.fixture(name="server_process")
+def _server_process(tmp_path_factory) -> Generator[Dict[str, object], None, None]:
+    """Launch the HTTP server in a background process for integration tests."""
+
     host = "127.0.0.1"
     port = reserve_port(host)
     directory = tmp_path_factory.mktemp("server-files")
-    process = subprocess.Popen(
+    with subprocess.Popen(
         [
             sys.executable,
             str(SERVER_ENTRYPOINT),
@@ -37,35 +43,39 @@ def server_process(tmp_path_factory) -> Generator[Dict[str, object], None, None]
         cwd=PROJECT_ROOT,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-    )
-    try:
-        wait_for_port(host, port)
-    except Exception:
+    ) as process:
+        try:
+            wait_for_port(host, port)
+        except Exception:
+            process.terminate()
+            process.wait(timeout=5)
+            raise
+
+        service_url = f"http://{host}:{port}"
+        yield {
+            "base_url": service_url,
+            "host": host,
+            "port": port,
+            "directory": directory,
+            "process": process,
+        }
+
         process.terminate()
-        process.wait(timeout=5)
-        raise
-
-    service_url = f"http://{host}:{port}"
-    yield {
-        "base_url": service_url,
-        "host": host,
-        "port": port,
-        "directory": directory,
-        "process": process,
-    }
-
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
 
 
 @pytest.fixture()
 def file_storage(tmp_path):
+    """Provide a temporary directory for file persistence tests."""
+
     return tmp_path
 
 
 @pytest.fixture()
 def base_url(server_process):
+    """Expose the running server base URL to integration tests."""
+
     return server_process["base_url"]

@@ -1,3 +1,5 @@
+"""Utilities for interacting with raw HTTP over sockets in tests."""
+
 from __future__ import annotations
 
 import socket
@@ -11,6 +13,8 @@ CRLF = b"\r\n"
 
 @dataclass(slots=True)
 class RawHttpResponse:
+    """Structured view of an HTTP response captured from a socket."""
+
     status_line: str
     headers: Dict[str, str]
     body: bytes
@@ -18,12 +22,16 @@ class RawHttpResponse:
 
 
 def reserve_port(host: str = "127.0.0.1") -> int:
+    """Return an available TCP port bound to the given host without listening."""
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind((host, 0))
         return sock.getsockname()[1]
 
 
 def wait_for_port(host: str, port: int, timeout: float = 5.0) -> None:
+    """Block until a TCP connection to host:port succeeds or timeout elapses."""
+
     deadline = time.perf_counter() + timeout
     while time.perf_counter() < deadline:
         try:
@@ -35,6 +43,8 @@ def wait_for_port(host: str, port: int, timeout: float = 5.0) -> None:
 
 
 def read_http_response(sock: socket.socket) -> RawHttpResponse:
+    """Read and parse an HTTP response from an open socket."""
+
     buffer = b""
     while HEADER_DELIMITER not in buffer:
         chunk = sock.recv(4096)
@@ -55,6 +65,8 @@ def read_http_response(sock: socket.socket) -> RawHttpResponse:
 
 
 def _parse_headers(lines: List[str]) -> Dict[str, str]:
+    """Convert header lines into a normalized dictionary."""
+
     parsed: Dict[str, str] = {}
     for line in lines:
         if not line:
@@ -67,6 +79,8 @@ def _parse_headers(lines: List[str]) -> Dict[str, str]:
 
 
 def _read_fixed_body(sock: socket.socket, buffer: bytes, length: int) -> bytes:
+    """Read a body with a declared content-length."""
+
     data = buffer
     while len(data) < length:
         chunk = sock.recv(4096)
@@ -77,6 +91,8 @@ def _read_fixed_body(sock: socket.socket, buffer: bytes, length: int) -> bytes:
 
 
 def _read_chunked_body(sock: socket.socket, buffer: bytes) -> tuple[bytes, List[int]]:
+    """Read a chunked transfer-encoded body returning data and chunk sizes."""
+
     chunks: List[bytes] = []
     sizes: List[int] = []
     remaining = buffer
@@ -104,6 +120,8 @@ def _read_chunked_body(sock: socket.socket, buffer: bytes) -> tuple[bytes, List[
 
 
 def _consume_trailing_crlf(sock: socket.socket, buffer: bytes) -> bytes:
+    """Consume the CRLF terminator after the zero-length chunk."""
+
     data = buffer
     while len(data) < len(CRLF):
         chunk = sock.recv(4096)
