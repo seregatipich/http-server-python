@@ -1,5 +1,7 @@
 # HTTP Server
 
+![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
+
 Python HTTP server supporting echo, user-agent inspection, gzip, and basic file IO endpoints. Designed for local experimentation without external dependencies.
 
 ## Features

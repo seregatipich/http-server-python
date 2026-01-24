@@ -1,5 +1,6 @@
 """HTTP server supporting echo, user-agent, and file operations."""
 
+import argparse
 import gzip
 import os
 import socket
@@ -161,9 +162,28 @@ def compress_if_gzip_supported(
 
 
 def accepts_gzip(headers: dict[str, str]) -> bool:
-    """Return True when the Accept-Encoding header includes gzip."""
+    """Return True when the Accept-Encoding header includes gzip with q>0."""
     encodings = headers.get("accept-encoding", "")
-    return any(value.strip() == "gzip" for value in encodings.split(","))
+    for token in encodings.split(","):
+        value = token.strip()
+        if not value:
+            continue
+        algorithm, _, params = value.partition(";")
+        if algorithm.strip().lower() != "gzip":
+            continue
+        quality = 1.0
+        if params:
+            for param in params.split(";"):
+                key, _, raw_value = param.strip().partition("=")
+                if key.lower() == "q" and raw_value:
+                    try:
+                        quality = float(raw_value)
+                    except ValueError:
+                        quality = 0.0
+                    break
+        if quality > 0:
+            return True
+    return False
 
 
 def should_close(headers: dict[str, str]) -> bool:
@@ -197,15 +217,25 @@ def send_response(client_socket: socket.socket, response: HttpResponse) -> None:
         client_socket.sendall(header_block + response.body)
 
 
+def parse_cli_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="HTTP server configuration")
+    parser.add_argument("--directory", default=".")
+    parser.add_argument("--host", default="localhost")
+    parser.add_argument("--port", type=int, default=4221)
+    return parser.parse_args(argv)
+
+
 def main() -> None:
     """Start the HTTP server and spawn worker threads per connection."""
-    directory = "."
-    if "--directory" in sys.argv:
-        directory = sys.argv[sys.argv.index("--directory") + 1]
-    server_socket = socket.create_server(("localhost", 4221), reuse_port=True)
+    args = parse_cli_args(sys.argv[1:])
+    server_socket = socket.create_server((args.host, args.port), reuse_port=True)
     while True:
         client_socket, _ = server_socket.accept()
-        threading.Thread(target=handle_client, args=(client_socket, directory), daemon=True).start()
+        threading.Thread(
+            target=handle_client,
+            args=(client_socket, args.directory),
+            daemon=True,
+        ).start()
 
 
 if __name__ == "__main__":
