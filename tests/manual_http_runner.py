@@ -1,4 +1,4 @@
-"""Script to exercise the HTTP server via smoke, load, and stress tests."""
+"""Manual HTTP runner covering smoke validation, load, and stress scenarios."""
 
 import argparse
 import concurrent.futures

@@ -45,31 +45,32 @@ Responses use `Content-Encoding: gzip` if supported by the client.
 
 ## Testing
 
-The project includes a comprehensive test suite in `tests/run_http_tests.py` (тоже не говно код).
+### Pytest suite
 
-### Test Scenarios
+The repository now ships a full unit, integration, and performance pytest suite.
 
-- **Smoke Tests**: Basic validation of all core endpoints.
-- **Persistent Connections**: Verifies multiple requests over a single TCP socket.
-- **Large Body Test**: Handles 5MB binary payloads to ensure stability.
-- **Load & Stress Tests**:
-    - **Low to Very High**: 20 to 1,000 requests with increasing concurrency.
-    - **Stress Tiers**: Up to 20,000 requests with 400 concurrent workers.
+```bash
+source venv/bin/activate
+python -m pytest          # run everything
+python -m pytest -m integration   # run only integration tests
+```
 
-### Running Tests
+Key coverage areas include gzip negotiation, socket parsing, HTTP response building, connection reuse, and end-to-end endpoint checks.
 
-1. Start the server:
-   ```bash
-   python3 main.py --directory .
-   ```
+### Manual operational runner
 
-2. Run the automated suite:
-   ```bash
-   python3 tests/run_http_tests.py
-   ```
+For smoke, load, and stress validations outside pytest, use the manual runner:
 
-   **Options:**
-   - `--skip-smoke`, `--skip-load`, `--skip-stress`: Skip specific tiers.
-   - `--base-url <url>`: Target a different server instance.
+```bash
+python3 tests/manual_http_runner.py [--base-url <url>] [--skip-smoke] [--skip-load] [--skip-stress]
+```
 
-Test artifacts are stored in `.http-test-artifacts/` (ignored by git).
+This CLI exercises:
+
+- **Smoke tests** for echo, user-agent, gzip, and `/files` flows.
+- **Persistent connection** reuse on a raw socket.
+- **Large body** uploads/downloads (5 MB).
+- **Load tiers** spanning 20–1,000 requests with increasing concurrency.
+- **Stress tiers** up to 20,000 requests and 400 workers.
+
+Test artifacts land in `.http-test-artifacts/`, which is git-ignored.
