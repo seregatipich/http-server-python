@@ -7,7 +7,9 @@ class FakeSocket:
     """Minimal socket stub that returns predefined chunks sequentially."""
 
     def __init__(self, chunks):
-        self._chunks = [chunk if isinstance(chunk, bytes) else chunk.encode() for chunk in chunks]
+        self._chunks = [
+            chunk if isinstance(chunk, bytes) else chunk.encode() for chunk in chunks
+        ]
 
     def recv(self, _):
         """Return the next chunk or an empty bytes object when exhausted."""
@@ -25,12 +27,14 @@ class FakeSocket:
 def test_parse_headers_normalizes_keys_and_skips_invalid_lines():
     """Header parsing should lowercase keys and ignore malformed lines."""
 
-    headers = parse_headers([
-        "Content-Length: 10",
-        "User-Agent: ExampleClient",
-        "x-custom: value",
-        "invalid-line",
-    ])
+    headers = parse_headers(
+        [
+            "Content-Length: 10",
+            "User-Agent: ExampleClient",
+            "x-custom: value",
+            "invalid-line",
+        ]
+    )
     assert headers == {
         "content-length": "10",
         "user-agent": "ExampleClient",

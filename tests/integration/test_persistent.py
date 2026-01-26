@@ -11,7 +11,9 @@ from tests.utils.http import read_http_response
 pytestmark = pytest.mark.integration
 
 
-def build_request(path: str, host: str, port: int, connection: str | None = None) -> bytes:
+def build_request(
+    path: str, host: str, port: int, connection: str | None = None
+) -> bytes:
     """Construct a GET request optionally specifying the Connection header."""
 
     lines = [

@@ -23,7 +23,9 @@ def test_build_response_echo_respects_gzip(tmp_path):
     """Echo endpoint should gzip payloads when requested."""
 
     headers = {"accept-encoding": "gzip"}
-    response = build_response(make_request("/echo/sample", headers=headers), str(tmp_path))
+    response = build_response(
+        make_request("/echo/sample", headers=headers), str(tmp_path)
+    )
     assert response.headers.get("Content-Encoding") == "gzip"
     assert gzip.decompress(response.body) == b"sample"
 

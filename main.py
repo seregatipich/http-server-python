@@ -46,7 +46,13 @@ def handle_client(client_socket: socket.socket, directory: str) -> None:
             send_response(client_socket, response)
             if response.close_connection:
                 break
-    except (ConnectionError, TimeoutError, OSError, UnicodeDecodeError, ValueError) as exc:
+    except (
+        ConnectionError,
+        TimeoutError,
+        OSError,
+        UnicodeDecodeError,
+        ValueError,
+    ) as exc:
         print(f"Error handling client: {exc}")
     finally:
         client_socket.close()
@@ -111,7 +117,9 @@ def text_response(message: str, request: HttpRequest) -> HttpResponse:
     payload = message.encode()
     payload, headers = compress_if_gzip_supported(payload, request.headers)
     base_headers = {"Content-Type": "text/plain", **headers}
-    return HttpResponse("HTTP/1.1 200 OK", base_headers, payload, should_close(request.headers))
+    return HttpResponse(
+        "HTTP/1.1 200 OK", base_headers, payload, should_close(request.headers)
+    )
 
 
 def file_response(request: HttpRequest, directory: str) -> HttpResponse:
@@ -133,7 +141,9 @@ def file_response(request: HttpRequest, directory: str) -> HttpResponse:
     if request.method == "POST":
         with open(filepath, "wb") as file_handle:
             file_handle.write(request.body)
-        return HttpResponse("HTTP/1.1 201 Created", {}, b"", should_close(request.headers))
+        return HttpResponse(
+            "HTTP/1.1 201 Created", {}, b"", should_close(request.headers)
+        )
     return not_found_response(request)
 
 
@@ -149,7 +159,9 @@ def stream_file(filepath: str, chunk_size: int = 65536) -> Iterator[bytes]:
 
 def not_found_response(request: HttpRequest) -> HttpResponse:
     """Return a 404 response reusing the connection preference."""
-    return HttpResponse("HTTP/1.1 404 Not Found", {}, b"", should_close(request.headers))
+    return HttpResponse(
+        "HTTP/1.1 404 Not Found", {}, b"", should_close(request.headers)
+    )
 
 
 def compress_if_gzip_supported(
@@ -218,6 +230,7 @@ def send_response(client_socket: socket.socket, response: HttpResponse) -> None:
 
 
 def parse_cli_args(argv: list[str]) -> argparse.Namespace:
+    """Return parsed CLI arguments for server configuration."""
     parser = argparse.ArgumentParser(description="HTTP server configuration")
     parser.add_argument("--directory", default=".")
     parser.add_argument("--host", default="localhost")

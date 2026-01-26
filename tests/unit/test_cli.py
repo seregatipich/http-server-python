@@ -4,6 +4,7 @@ from main import parse_cli_args
 
 
 def test_parse_cli_args_uses_defaults():
+    """Defaults ensure server launches with local settings."""
     args = parse_cli_args([])
 
     assert args.directory == "."
@@ -12,6 +13,7 @@ def test_parse_cli_args_uses_defaults():
 
 
 def test_parse_cli_args_honors_overrides(tmp_path):
+    """Overrides should replace defaults when flags are present."""
     override_dir = tmp_path.as_posix()
 
     args = parse_cli_args(
