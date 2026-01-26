@@ -1,3 +1,5 @@
+"""Tests for logging configuration helpers."""
+
 import logging
 from pathlib import Path
 
@@ -5,6 +7,7 @@ from logging_config import configure_logging
 
 
 def test_configure_logging_stream_handler(monkeypatch):
+    """Configure stdout handler and validate formatter output."""
     monkeypatch.setenv("HTTP_SERVER_LOG_LEVEL", "INFO")
     logger = configure_logging("DEBUG", "stdout")
 
@@ -31,6 +34,7 @@ def test_configure_logging_stream_handler(monkeypatch):
 
 
 def test_configure_logging_file_destination(tmp_path: Path):
+    """Configure file handler and verify writes are persisted."""
     destination = tmp_path / "server.log"
     logger = configure_logging("WARNING", destination.as_posix())
 

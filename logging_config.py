@@ -1,3 +1,5 @@
+"""Logging configuration utilities for the HTTP server."""
+
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
@@ -12,6 +14,7 @@ BACKUP_COUNT = 5
 
 
 def _resolve_level(level_name: str) -> int:
+    """Translate text level names into logging module numeric levels."""
     level = getattr(logging, level_name.upper(), None)
     if isinstance(level, int):
         return level
@@ -19,6 +22,7 @@ def _resolve_level(level_name: str) -> int:
 
 
 def _build_handler(destination: Optional[str], level: int) -> logging.Handler:
+    """Create a stdout or rotating file handler for the configured logger."""
     if destination and destination.lower() != "stdout":
         target_path = Path(destination)
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -33,6 +37,7 @@ def _build_handler(destination: Optional[str], level: int) -> logging.Handler:
 
 
 def configure_logging(level: str = "INFO", destination: Optional[str] = None) -> logging.Logger:
+    """Configure and return the project logger with the requested handler."""
     logger = logging.getLogger(LOGGER_NAME)
     numeric_level = _resolve_level(level)
     logger.setLevel(numeric_level)
