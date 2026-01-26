@@ -21,6 +21,7 @@ Python HTTP server supporting echo, user-agent inspection, gzip, and basic file 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -40,6 +41,13 @@ Environment overrides mirror the CLI defaults:
 
 - `HTTP_SERVER_LOG_LEVEL`
 - `HTTP_SERVER_LOG_DESTINATION`
+
+## Logging
+
+- `logging_config.configure_logging()` centralizes handler setup for the project-wide `http_server` logger.
+- Child loggers (`http_server.server`, `http_server.compression`) emit structured context for connection lifecycle, file IO, and compression decisions.
+- When `--log-destination` points to a file, a rotating handler enforces 10 MB segments with five retained backups.
+- `INFO` is the default level; switch to `DEBUG` for socket-level troubleshooting and revert afterward to avoid noisy output.
 
 ## Endpoints
 
