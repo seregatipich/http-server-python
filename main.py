@@ -2,12 +2,18 @@
 
 import argparse
 import gzip
+import logging
 import os
 import socket
 import sys
 import threading
 from dataclasses import dataclass
 from typing import Iterable, Iterator, Optional, Tuple
+
+from logging_config import configure_logging
+
+SERVER_LOGGER = logging.getLogger("http_server.server")
+COMPRESSION_LOGGER = logging.getLogger("http_server.compression")
 
 HEADER_DELIMITER = b"\r\n\r\n"
 
@@ -34,13 +40,19 @@ class HttpResponse:
     use_chunked: bool = False
 
 
-def handle_client(client_socket: socket.socket, directory: str) -> None:
+def handle_client(
+    client_socket: socket.socket, directory: str, client_address: tuple[str, int]
+) -> None:
     """Process requests on a client socket until the connection is closed."""
     buffer = b""
+    SERVER_LOGGER.debug("Connection opened", extra={"client": client_address})
     try:
         while True:
             request, buffer = receive_request(client_socket, buffer)
             if request is None:
+                SERVER_LOGGER.debug(
+                    "Client disconnected", extra={"client": client_address}
+                )
                 return
             response = build_response(request, directory)
             send_response(client_socket, response)
@@ -52,10 +64,13 @@ def handle_client(client_socket: socket.socket, directory: str) -> None:
         OSError,
         UnicodeDecodeError,
         ValueError,
-    ) as exc:
-        print(f"Error handling client: {exc}")
+    ):
+        SERVER_LOGGER.exception(
+            "Error handling client", extra={"client": client_address}
+        )
     finally:
         client_socket.close()
+        SERVER_LOGGER.debug("Connection closed", extra={"client": client_address})
 
 
 def receive_request(
@@ -80,6 +95,7 @@ def receive_request(
         remainder += chunk
     body = remainder[:content_length]
     leftover = remainder[content_length:]
+    SERVER_LOGGER.debug("Parsed request", extra={"method": method, "path": path})
     return HttpRequest(method, path, headers, body), leftover
 
 
@@ -129,6 +145,9 @@ def file_response(request: HttpRequest, directory: str) -> HttpResponse:
     if request.method == "GET":
         if os.path.exists(filepath):
             headers = {"Content-Type": "application/octet-stream"}
+            SERVER_LOGGER.info(
+                "Served file", extra={"path": filepath, "method": request.method}
+            )
             return HttpResponse(
                 "HTTP/1.1 200 OK",
                 headers,
@@ -141,9 +160,15 @@ def file_response(request: HttpRequest, directory: str) -> HttpResponse:
     if request.method == "POST":
         with open(filepath, "wb") as file_handle:
             file_handle.write(request.body)
+        SERVER_LOGGER.info(
+            "Stored file", extra={"path": filepath, "method": request.method}
+        )
         return HttpResponse(
             "HTTP/1.1 201 Created", {}, b"", should_close(request.headers)
         )
+    SERVER_LOGGER.warning(
+        "Unsupported method", extra={"path": filepath, "method": request.method}
+    )
     return not_found_response(request)
 
 
@@ -170,6 +195,7 @@ def compress_if_gzip_supported(
     """Compress the payload when the request advertises gzip support."""
     if not accepts_gzip(headers):
         return payload, {}
+    COMPRESSION_LOGGER.debug("Compressed payload", extra={"size": len(payload)})
     return gzip.compress(payload), {"Content-Encoding": "gzip"}
 
 
@@ -227,6 +253,10 @@ def send_response(client_socket: socket.socket, response: HttpResponse) -> None:
         client_socket.sendall(b"0\r\n\r\n")
     else:
         client_socket.sendall(header_block + response.body)
+    SERVER_LOGGER.debug(
+        "Sent response",
+        extra={"status": response.status_line, "use_chunked": response.use_chunked},
+    )
 
 
 def parse_cli_args(argv: list[str]) -> argparse.Namespace:
@@ -235,18 +265,43 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--directory", default=".")
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=4221)
+    default_log_level = os.getenv("HTTP_SERVER_LOG_LEVEL", "INFO").upper()
+    default_destination = os.getenv("HTTP_SERVER_LOG_DESTINATION", "stdout")
+    parser.add_argument(
+        "--log-level",
+        default=default_log_level,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        type=str.upper,
+    )
+    parser.add_argument(
+        "--log-destination",
+        default=default_destination,
+        help="stdout or a file path",
+    )
     return parser.parse_args(argv)
 
 
 def main() -> None:
     """Start the HTTP server and spawn worker threads per connection."""
     args = parse_cli_args(sys.argv[1:])
+    configure_logging(args.log_level, args.log_destination)
+    SERVER_LOGGER.info(
+        "Starting HTTP server",
+        extra={
+            "host": args.host,
+            "port": args.port,
+            "directory": args.directory,
+            "log_destination": args.log_destination,
+            "log_level": args.log_level,
+        },
+    )
     server_socket = socket.create_server((args.host, args.port), reuse_port=True)
     while True:
-        client_socket, _ = server_socket.accept()
+        client_socket, client_address = server_socket.accept()
+        SERVER_LOGGER.debug("Accepted client", extra={"client": client_address})
         threading.Thread(
             target=handle_client,
-            args=(client_socket, args.directory),
+            args=(client_socket, args.directory, client_address),
             daemon=True,
         ).start()
 

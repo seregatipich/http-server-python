@@ -1,6 +1,7 @@
 """Unit tests validating gzip negotiation helpers."""
 
 import gzip
+import logging
 
 from main import accepts_gzip, compress_if_gzip_supported
 
@@ -45,3 +46,17 @@ def test_compress_if_gzip_supported_passthrough_when_not_supported():
     compressed, response_headers = compress_if_gzip_supported(payload, {})
     assert compressed == payload
     assert not response_headers
+
+
+def test_compress_if_gzip_supported_logs_debug(caplog):
+    """Compression should emit a debug log when gzip is applied."""
+
+    caplog.set_level(logging.DEBUG, logger="http_server.compression")
+
+    payload = b"payload"
+    compress_if_gzip_supported(payload, {"accept-encoding": "gzip"})
+
+    assert any(
+        record.message == "Compressed payload" and record.size == len(payload)
+        for record in caplog.records
+    )

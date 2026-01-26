@@ -26,10 +26,20 @@ source venv/bin/activate
 ## Usage
 
 ```bash
-python3 main.py [--directory <path>]
+python3 main.py [--directory <path>] [--host <host>] [--port <port>] \
+  [--log-level <LEVEL>] [--log-destination <stdout|path>]
 ```
 
-The `--directory` flag sets the root for `/files/*` operations (defaults to current directory).
+- `--directory`: root for `/files/*` operations (defaults to current directory)
+- `--host`: bind host (default `localhost`)
+- `--port`: bind port (default `4221`)
+- `--log-level`: DEBUG, INFO, WARNING, ERROR, or CRITICAL (default `INFO`)
+- `--log-destination`: `stdout` or file path; when a file is provided, logs rotate at 10 MB with 5 backups.
+
+Environment overrides mirror the CLI defaults:
+
+- `HTTP_SERVER_LOG_LEVEL`
+- `HTTP_SERVER_LOG_DESTINATION`
 
 ## Endpoints
 
