@@ -8,7 +8,9 @@ import socket
 import ssl
 import sys
 import threading
+import urllib.parse
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, Iterator, Optional, Tuple
 
 from logging_config import configure_logging
@@ -17,12 +19,24 @@ SERVER_LOGGER = logging.getLogger("http_server.server")
 COMPRESSION_LOGGER = logging.getLogger("http_server.compression")
 
 HEADER_DELIMITER = b"\r\n\r\n"
+FILES_ENDPOINT_PREFIX = "/files/"
+ALLOWED_METHODS = {"GET", "POST"}
+_body_limit_env = os.getenv("HTTP_SERVER_MAX_BODY_BYTES")
+MAX_BODY_BYTES = int(_body_limit_env) if _body_limit_env is not None else 5 * 1024 * 1024
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
     "Content-Security-Policy": "default-src 'self'",
     "X-Content-Type-Options": "nosniff",
 }
+
+
+class ForbiddenPath(Exception):
+    """Raised when a requested path escapes the configured sandbox."""
+
+
+class RequestEntityTooLarge(Exception):
+    """Raised when a request body exceeds configured limits."""
 
 
 @dataclass
@@ -55,12 +69,41 @@ def handle_client(
     SERVER_LOGGER.debug("Connection opened", extra={"client": client_address})
     try:
         while True:
-            request, buffer = receive_request(client_socket, buffer)
+            try:
+                request, buffer = receive_request(client_socket, buffer)
+            except RequestEntityTooLarge:
+                SERVER_LOGGER.warning(
+                    "Request body too large", extra={"client": client_address}
+                )
+                send_response(client_socket, entity_too_large_response())
+                break
+            except ForbiddenPath:
+                SERVER_LOGGER.warning(
+                    "Forbidden path",
+                    extra={"client": client_address},
+                )
+                send_response(client_socket, forbidden_response())
+                break
+            except ValueError:
+                SERVER_LOGGER.warning(
+                    "Malformed request", extra={"client": client_address}
+                )
+                send_response(client_socket, bad_request_response())
+                break
+
             if request is None:
                 SERVER_LOGGER.debug(
                     "Client disconnected", extra={"client": client_address}
                 )
                 return
+
+            validation_response = validate_request(request)
+            if validation_response is not None:
+                send_response(client_socket, validation_response)
+                if validation_response.close_connection:
+                    break
+                continue
+
             response = build_response(request, directory)
             send_response(client_socket, response)
             if response.close_connection:
@@ -70,7 +113,6 @@ def handle_client(
         TimeoutError,
         OSError,
         UnicodeDecodeError,
-        ValueError,
     ):
         SERVER_LOGGER.exception(
             "Error handling client", extra={"client": client_address}
@@ -89,17 +131,21 @@ def receive_request(
         if not chunk:
             return None, b""
         buffer += chunk
+
     header_block, remainder = buffer.split(HEADER_DELIMITER, 1)
     header_lines = header_block.decode().split("\r\n")
-    request_line = header_lines[0]
-    method, path, _ = request_line.split(" ")
+    method, path = parse_request_line(header_lines[0])
     headers = parse_headers(header_lines[1:])
-    content_length = int(headers.get("content-length", 0))
+    content_length = determine_content_length(method, headers)
+
     while len(remainder) < content_length:
         chunk = client_socket.recv(4096)
         if not chunk:
             return None, b""
         remainder += chunk
+        if len(remainder) > MAX_BODY_BYTES:
+            raise RequestEntityTooLarge
+
     body = remainder[:content_length]
     leftover = remainder[content_length:]
     SERVER_LOGGER.debug("Parsed request", extra={"method": method, "path": path})
@@ -116,18 +162,130 @@ def parse_headers(lines: Iterable[str]) -> dict[str, str]:
     return parsed
 
 
+def enforce_allowed_method(request: HttpRequest) -> Optional[HttpResponse]:
+    """Ensure the HTTP method is part of the supported allowlist."""
+    if request.method in ALLOWED_METHODS:
+        return None
+    return method_not_allowed_response(request)
+
+
+def enforce_safe_path(request: HttpRequest) -> Optional[HttpResponse]:
+    """Validate that the path conforms to sandbox safety requirements."""
+    if not request.path.startswith("/") or "\x00" in request.path:
+        return bad_request_response(request)
+    if "/../" in request.path or request.path.endswith("/..") or request.path.startswith("/.."):
+        return forbidden_response(request)
+    return None
+
+
+def enforce_post_constraints(request: HttpRequest) -> Optional[HttpResponse]:
+    """Validate POST-specific invariants such as Content-Length and size."""
+    declared_length = request.headers.get("content-length")
+    if declared_length is None:
+        return bad_request_response(request)
+    try:
+        content_length = int(declared_length)
+    except ValueError:
+        return bad_request_response(request)
+    if content_length != len(request.body):
+        return bad_request_response(request)
+    if content_length > MAX_BODY_BYTES:
+        return entity_too_large_response()
+    return None
+
+
+def parse_request_line(request_line: str) -> Tuple[str, str]:
+    """Parse the HTTP method and sanitized path from the request line."""
+    try:
+        method, target, _ = request_line.split(" ", 2)
+    except ValueError as exc:
+        raise ValueError("Invalid request line") from exc
+
+    parsed_target = urllib.parse.urlsplit(target)
+    path = urllib.parse.unquote(parsed_target.path)
+    if target.startswith(f"{FILES_ENDPOINT_PREFIX}..") or f"{FILES_ENDPOINT_PREFIX}../" in target:
+        raise ForbiddenPath
+    return method, path
+
+
+def determine_content_length(method: str, headers: dict[str, str]) -> int:
+    """Validate and return the declared Content-Length for the request."""
+    header_value = headers.get("content-length")
+    if method == "POST" and header_value is None:
+        raise ValueError("Missing Content-Length")
+    if header_value is None:
+        return 0
+    try:
+        content_length = int(header_value)
+    except ValueError as exc:
+        raise ValueError("Invalid Content-Length") from exc
+    if content_length < 0:
+        raise ValueError("Negative Content-Length")
+    if content_length > MAX_BODY_BYTES:
+        raise RequestEntityTooLarge
+    return content_length
+
+
+def validate_request(request: HttpRequest) -> Optional[HttpResponse]:
+    """Return an error response when the request fails validation checks."""
+    method_error = enforce_allowed_method(request)
+    if method_error is not None:
+        return method_error
+
+    path_error = enforce_safe_path(request)
+    if path_error is not None:
+        return path_error
+
+    if request.method != "POST":
+        return None
+
+    return enforce_post_constraints(request)
+
+
+def resolve_sandbox_path(directory: str, user_path: str) -> Path:
+    """Resolve a user-supplied path inside the configured sandbox."""
+    if "\x00" in user_path:
+        raise ForbiddenPath
+
+    directory_root = Path(directory).resolve()
+    relative_part = user_path.lstrip("/")
+    if not relative_part:
+        raise ForbiddenPath
+
+    if ".." in Path(relative_part).parts:
+        raise ForbiddenPath
+
+    target = (directory_root / relative_part).resolve()
+    if not (target == directory_root or directory_root in target.parents):
+        raise ForbiddenPath
+
+    return target
+
+
 def build_response(request: HttpRequest, directory: str) -> HttpResponse:
     """Route the request to the appropriate handler and return a response."""
+    response = not_found_response(request)
     if request.path == "/":
-        return empty_response(request)
-    if request.path.startswith("/echo/"):
-        return text_response(request.path[6:], request)
-    if request.path == "/user-agent":
+        response = empty_response(request)
+    elif request.path.startswith("/echo/"):
+        response = text_response(request.path[6:], request)
+    elif request.path == "/user-agent":
         agent = request.headers.get("user-agent", "")
-        return text_response(agent, request)
-    if request.path.startswith("/files/"):
-        return file_response(request, directory)
-    return not_found_response(request)
+        response = text_response(agent, request)
+    elif request.path.startswith(FILES_ENDPOINT_PREFIX):
+        remainder = request.path[len(FILES_ENDPOINT_PREFIX) :]
+        is_invalid = (
+            not remainder
+            or remainder.startswith("../")
+            or "/../" in remainder
+            or remainder.startswith("..")
+        )
+        response = (
+            forbidden_response(request)
+            if is_invalid
+            else file_response(request, directory)
+        )
+    return response
 
 
 def empty_response(request: HttpRequest) -> HttpResponse:
@@ -149,31 +307,42 @@ def text_response(message: str, request: HttpRequest) -> HttpResponse:
 
 def file_response(request: HttpRequest, directory: str) -> HttpResponse:
     """Serve or write a file based on the HTTP method."""
-    filename = request.path[7:]
-    filepath = os.path.join(directory, filename)
+    filename = request.path[len(FILES_ENDPOINT_PREFIX) :]
+    try:
+        resolved_path = resolve_sandbox_path(directory, filename)
+    except ForbiddenPath:
+        SERVER_LOGGER.warning(
+            "Forbidden path",
+            extra={"path": filename, "method": request.method},
+        )
+        return forbidden_response(request)
+
     if request.method == "GET":
-        if os.path.exists(filepath):
+        if resolved_path.exists() and resolved_path.is_file():
             headers = {
                 "Content-Type": "application/octet-stream",
                 **SECURITY_HEADERS,
             }
             SERVER_LOGGER.info(
-                "Served file", extra={"path": filepath, "method": request.method}
+                "Served file",
+                extra={"path": resolved_path.as_posix(), "method": request.method},
             )
             return HttpResponse(
                 "HTTP/1.1 200 OK",
                 headers,
                 b"",
                 should_close(request.headers),
-                body_iter=stream_file(filepath),
+                body_iter=stream_file(resolved_path),
                 use_chunked=True,
             )
         return not_found_response(request)
     if request.method == "POST":
-        with open(filepath, "wb") as file_handle:
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(resolved_path, "wb") as file_handle:
             file_handle.write(request.body)
         SERVER_LOGGER.info(
-            "Stored file", extra={"path": filepath, "method": request.method}
+            "Stored file",
+            extra={"path": resolved_path.as_posix(), "method": request.method},
         )
         return HttpResponse(
             "HTTP/1.1 201 Created",
@@ -181,13 +350,16 @@ def file_response(request: HttpRequest, directory: str) -> HttpResponse:
             b"",
             should_close(request.headers),
         )
+    if resolved_path.is_dir():
+        return forbidden_response(request)
     SERVER_LOGGER.warning(
-        "Unsupported method", extra={"path": filepath, "method": request.method}
+        "Unsupported method",
+        extra={"path": resolved_path.as_posix(), "method": request.method},
     )
-    return not_found_response(request)
+    return method_not_allowed_response(request)
 
 
-def stream_file(filepath: str, chunk_size: int = 65536) -> Iterator[bytes]:
+def stream_file(filepath: Path, chunk_size: int = 65536) -> Iterator[bytes]:
     """Yield file contents in fixed-size chunks for streaming responses."""
     with open(filepath, "rb") as file_handle:
         while True:
@@ -202,6 +374,45 @@ def not_found_response(request: HttpRequest) -> HttpResponse:
     return HttpResponse(
         "HTTP/1.1 404 Not Found",
         SECURITY_HEADERS.copy(),
+        b"",
+        should_close(request.headers),
+    )
+
+
+def forbidden_response(request: Optional[HttpRequest] = None) -> HttpResponse:
+    """Produce a 403 response honoring the caller's connection preference."""
+    headers = request.headers if request is not None else {}
+    return HttpResponse(
+        "HTTP/1.1 403 Forbidden",
+        SECURITY_HEADERS.copy(),
+        b"",
+        should_close(headers) if request is not None else True,
+    )
+
+
+def bad_request_response(request: Optional[HttpRequest] = None) -> HttpResponse:
+    """Produce a 400 response honoring the caller's connection preference."""
+    headers = request.headers if request is not None else {}
+    return HttpResponse(
+        "HTTP/1.1 400 Bad Request",
+        SECURITY_HEADERS.copy(),
+        b"",
+        should_close(headers) if request is not None else True,
+    )
+
+
+def entity_too_large_response() -> HttpResponse:
+    """Produce a 413 response that always closes the connection."""
+    return HttpResponse("HTTP/1.1 413 Payload Too Large", SECURITY_HEADERS.copy(), b"", True)
+
+
+def method_not_allowed_response(request: HttpRequest) -> HttpResponse:
+    """Produce a 405 response enumerating the supported HTTP methods."""
+    allow_header = ", ".join(sorted(ALLOWED_METHODS))
+    headers = {"Allow": allow_header, **SECURITY_HEADERS}
+    return HttpResponse(
+        "HTTP/1.1 405 Method Not Allowed",
+        headers,
         b"",
         should_close(request.headers),
     )

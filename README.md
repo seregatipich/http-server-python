@@ -12,6 +12,7 @@ Threaded HTTP/1.1 server with echo, user-agent inspection, configurable file IO,
 - **File uploads and downloads**: `POST /files/<path>` writes raw bytes to the configured directory and `GET /files/<path>` streams content via `Transfer-Encoding: chunked` for large artifacts.
 - **Transport security**: Passing `--cert` and `--key` enables TLS 1.3 termination directly in the server process.
 - **Security headers**: Strict-Transport-Security, Content-Security-Policy, and X-Content-Type-Options are attached to every response, including 404s.
+- **Request validation and sandboxing**: `/files/*` is restricted to the configured root, blocking traversal (`..`) and null bytes; uploads enforce `Content-Length` and reject bodies over `HTTP_SERVER_MAX_BODY_BYTES` (default 5 MiB).
 - **Structured logging**: `logging_config.configure_logging()` wires a shared logger hierarchy (`http_server.*`) with configurable destinations and levels.
 
 ## Requirements
@@ -42,6 +43,7 @@ python3 main.py [--directory <path>] [--host <host>] [--port <port>] \
 - `--cert`/`--key`: PEM files required to serve HTTPS.
 - `--log-level`: DEBUG, INFO, WARNING, ERROR, or CRITICAL (default `INFO`).
 - `--log-destination`: `stdout` or a filesystem path. File destinations rotate at 10 MB with five retained backups.
+- `HTTP_SERVER_MAX_BODY_BYTES`: optional override for maximum accepted request body size in bytes (defaults to 5 MiB).
 
 Environment variables mirror the logging flags:
 
