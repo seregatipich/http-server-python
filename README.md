@@ -2,17 +2,17 @@
 
 ![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 
-Python HTTP server supporting echo, user-agent inspection, gzip, and basic file IO endpoints. Designed for local experimentation without external dependencies.
+Threaded HTTP/1.1 server with echo, user-agent inspection, configurable file IO, gzip negotiation, and optional TLS termination. Ideal for experimenting with raw socket handling while keeping the codebase dependency-light.
 
 ## Features
 
-- **Persistent Connections**: Uses `threading.Thread` to handle concurrent clients and a `while True` loop to support multiple requests over a single connection.
-- **Dynamic Routing**: Built-in handlers for echo, user-agent, and file operations.
-- **Compression**: Automatic `gzip` compression when `Accept-Encoding: gzip` is present.
-- **File Storage**: Configurable root directory for file uploads and downloads.
-- **Chunked Streaming**: Large file downloads stream via `Transfer-Encoding: chunked` to avoid buffering entire payloads.
-- **TLS Termination**: Native HTTPS support with configurable certificates and modern TLS 1.3 defaults.
-- **Security Headers**: Automatic injection of HSTS, CSP, and X-Content-Type-Options headers.
+- **Concurrency and persistence**: Every connection is handled in a dedicated `threading.Thread`, and sockets remain open for multiple requests unless the client asks to close.
+- **Purpose-built routing**: `/`, `/echo/<message>`, `/user-agent`, and `/files/<path>` cover the core exercise flows without an external framework.
+- **Gzip negotiation**: Payloads automatically compress when `Accept-Encoding: gzip` advertises a non-zero quality factor.
+- **File uploads and downloads**: `POST /files/<path>` writes raw bytes to the configured directory and `GET /files/<path>` streams content via `Transfer-Encoding: chunked` for large artifacts.
+- **Transport security**: Passing `--cert` and `--key` enables TLS 1.3 termination directly in the server process.
+- **Security headers**: Strict-Transport-Security, Content-Security-Policy, and X-Content-Type-Options are attached to every response, including 404s.
+- **Structured logging**: `logging_config.configure_logging()` wires a shared logger hierarchy (`http_server.*`) with configurable destinations and levels.
 
 ## Requirements
 
@@ -34,66 +34,50 @@ python3 main.py [--directory <path>] [--host <host>] [--port <port>] \
   [--log-level <LEVEL>] [--log-destination <stdout|path>]
 ```
 
-- `--directory`: root for `/files/*` operations (defaults to current directory)
-- `--host`: bind host (default `localhost`)
-- `--port`: bind port (default `4221`)
-- `--cert`: path to TLS certificate file (enables HTTPS)
-- `--key`: path to TLS private key file (enables HTTPS)
-- `--log-level`: DEBUG, INFO, WARNING, ERROR, or CRITICAL (default `INFO`)
-- `--log-destination`: `stdout` or file path; when a file is provided, logs rotate at 10 MB with 5 backups.
+- `--directory`: root for `/files/*` operations (defaults to the current working directory).
+- `--host`: bind host (default `localhost`).
+- `--port`: bind port (default `4221`).
+- `--cert`/`--key`: PEM files required to serve HTTPS.
+- `--log-level`: DEBUG, INFO, WARNING, ERROR, or CRITICAL (default `INFO`).
+- `--log-destination`: `stdout` or a filesystem path. File destinations rotate at 10 MB with five retained backups.
 
-Environment overrides mirror the CLI defaults:
+Environment variables mirror the logging flags:
 
 - `HTTP_SERVER_LOG_LEVEL`
 - `HTTP_SERVER_LOG_DESTINATION`
 
-## Logging
-
-- `logging_config.configure_logging()` centralizes handler setup for the project-wide `http_server` logger.
-- Child loggers (`http_server.server`, `http_server.compression`) emit structured context for connection lifecycle, file IO, and compression decisions.
-- When `--log-destination` points to a file, a rotating handler enforces 10 MB segments with five retained backups.
-- `INFO` is the default level; switch to `DEBUG` for socket-level troubleshooting and revert afterward to avoid noisy output.
-
 ## Endpoints
 
-| Method | Path pattern        | Description                                 |
-|--------|---------------------|---------------------------------------------|
-| GET    | `/`                 | Health check (200 OK)                       |
-| GET    | `/echo/<msg>`       | Returns `<msg>` as `text/plain`             |
-| GET    | `/user-agent`       | Returns the `User-Agent` request header      |
-| GET    | `/files/<path>`     | Serves file from disk                       |
-| POST   | `/files/<path>`     | Saves request body to disk                  |
+| Method | Path pattern    | Description                               |
+|--------|-----------------|-------------------------------------------|
+| GET    | `/`             | Returns 200 OK for health checks          |
+| GET    | `/echo/<msg>`   | Responds with `<msg>` as `text/plain`     |
+| GET    | `/user-agent`   | Surfaces the incoming `User-Agent` header |
+| GET    | `/files/<path>` | Streams a file from the configured root   |
+| POST   | `/files/<path>` | Writes the request body to disk           |
 
-Responses use `Content-Encoding: gzip` if supported by the client.
+Responses advertise `Content-Encoding: gzip` when the client opts in.
+
+## Logging
+
+`logging_config.configure_logging()` sets the base logger once, giving the server and compression modules consistent formatting and context. Use `--log-level DEBUG` when you need socket-level traces and revert back to INFO to keep noise low. Point `--log-destination` to a file when long-running tests would overwhelm stdout.
 
 ## Testing
 
-### Pytest suite
-
-The repository now ships a full unit, integration, and performance pytest suite.
+### Pytest
 
 ```bash
 source venv/bin/activate
-python -m pytest          # run everything
-python -m pytest -m integration   # run only integration tests
+python -m pytest            # run entire suite
+python -m pytest -m integration  # run only integration tests
 ```
 
-Key coverage areas include gzip negotiation, socket parsing, HTTP response building, connection reuse, and end-to-end endpoint checks.
+Unit tests cover parsing, compression, and CLI behavior. Integration tests spawn the server process (including HTTPS mode) to verify routing, headers, persistent sockets, and chunked transfers.
 
-### Manual operational runner
-
-For smoke, load, and stress validations outside pytest, use the manual runner:
+### Manual runner
 
 ```bash
 python3 tests/manual_http_runner.py [--base-url <url>] [--skip-smoke] [--skip-load] [--skip-stress]
 ```
 
-This CLI exercises:
-
-- **Smoke tests** for echo, user-agent, gzip, and `/files` flows.
-- **Persistent connection** reuse on a raw socket.
-- **Large body** uploads/downloads (5 MB).
-- **Load tiers** spanning 20–1,000 requests with increasing concurrency.
-- **Stress tiers** up to 20,000 requests and 400 workers.
-
-Test artifacts land in `.http-test-artifacts/`, which is git-ignored.
+The manual CLI drives smoke checks, persistent-connection probes, multi-megabyte file transfers, and progressive load/stress tiers. Run results are stored in `.http-test-artifacts/`, which stays out of version control.
