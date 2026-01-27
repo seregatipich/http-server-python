@@ -38,3 +38,5 @@ Thumbs.db
 .http-test-artifacts/
 .pytest_cache/
 docs/
+ai_docs/
+certs/

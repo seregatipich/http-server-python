@@ -11,6 +11,8 @@ Python HTTP server supporting echo, user-agent inspection, gzip, and basic file 
 - **Compression**: Automatic `gzip` compression when `Accept-Encoding: gzip` is present.
 - **File Storage**: Configurable root directory for file uploads and downloads.
 - **Chunked Streaming**: Large file downloads stream via `Transfer-Encoding: chunked` to avoid buffering entire payloads.
+- **TLS Termination**: Native HTTPS support with configurable certificates and modern TLS 1.3 defaults.
+- **Security Headers**: Automatic injection of HSTS, CSP, and X-Content-Type-Options headers.
 
 ## Requirements
 
@@ -28,12 +30,15 @@ pip install -r requirements.txt
 
 ```bash
 python3 main.py [--directory <path>] [--host <host>] [--port <port>] \
+  [--cert <cert.pem>] [--key <key.pem>] \
   [--log-level <LEVEL>] [--log-destination <stdout|path>]
 ```
 
 - `--directory`: root for `/files/*` operations (defaults to current directory)
 - `--host`: bind host (default `localhost`)
 - `--port`: bind port (default `4221`)
+- `--cert`: path to TLS certificate file (enables HTTPS)
+- `--key`: path to TLS private key file (enables HTTPS)
 - `--log-level`: DEBUG, INFO, WARNING, ERROR, or CRITICAL (default `INFO`)
 - `--log-destination`: `stdout` or file path; when a file is provided, logs rotate at 10 MB with 5 backups.
 

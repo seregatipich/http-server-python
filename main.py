@@ -5,6 +5,7 @@ import gzip
 import logging
 import os
 import socket
+import ssl
 import sys
 import threading
 from dataclasses import dataclass
@@ -16,6 +17,12 @@ SERVER_LOGGER = logging.getLogger("http_server.server")
 COMPRESSION_LOGGER = logging.getLogger("http_server.compression")
 
 HEADER_DELIMITER = b"\r\n\r\n"
+
+SECURITY_HEADERS = {
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+    "Content-Security-Policy": "default-src 'self'",
+    "X-Content-Type-Options": "nosniff",
+}
 
 
 @dataclass
@@ -125,14 +132,16 @@ def build_response(request: HttpRequest, directory: str) -> HttpResponse:
 
 def empty_response(request: HttpRequest) -> HttpResponse:
     """Return a 200 OK response with no body."""
-    return HttpResponse("HTTP/1.1 200 OK", {}, b"", should_close(request.headers))
+    return HttpResponse(
+        "HTTP/1.1 200 OK", SECURITY_HEADERS.copy(), b"", should_close(request.headers)
+    )
 
 
 def text_response(message: str, request: HttpRequest) -> HttpResponse:
     """Return a text/plain response, compressing when appropriate."""
     payload = message.encode()
     payload, headers = compress_if_gzip_supported(payload, request.headers)
-    base_headers = {"Content-Type": "text/plain", **headers}
+    base_headers = {"Content-Type": "text/plain", **headers, **SECURITY_HEADERS}
     return HttpResponse(
         "HTTP/1.1 200 OK", base_headers, payload, should_close(request.headers)
     )
@@ -144,7 +153,10 @@ def file_response(request: HttpRequest, directory: str) -> HttpResponse:
     filepath = os.path.join(directory, filename)
     if request.method == "GET":
         if os.path.exists(filepath):
-            headers = {"Content-Type": "application/octet-stream"}
+            headers = {
+                "Content-Type": "application/octet-stream",
+                **SECURITY_HEADERS,
+            }
             SERVER_LOGGER.info(
                 "Served file", extra={"path": filepath, "method": request.method}
             )
@@ -164,7 +176,10 @@ def file_response(request: HttpRequest, directory: str) -> HttpResponse:
             "Stored file", extra={"path": filepath, "method": request.method}
         )
         return HttpResponse(
-            "HTTP/1.1 201 Created", {}, b"", should_close(request.headers)
+            "HTTP/1.1 201 Created",
+            SECURITY_HEADERS.copy(),
+            b"",
+            should_close(request.headers),
         )
     SERVER_LOGGER.warning(
         "Unsupported method", extra={"path": filepath, "method": request.method}
@@ -185,7 +200,10 @@ def stream_file(filepath: str, chunk_size: int = 65536) -> Iterator[bytes]:
 def not_found_response(request: HttpRequest) -> HttpResponse:
     """Return a 404 response reusing the connection preference."""
     return HttpResponse(
-        "HTTP/1.1 404 Not Found", {}, b"", should_close(request.headers)
+        "HTTP/1.1 404 Not Found",
+        SECURITY_HEADERS.copy(),
+        b"",
+        should_close(request.headers),
     )
 
 
@@ -265,6 +283,8 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--directory", default=".")
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=4221)
+    parser.add_argument("--cert", help="Path to TLS certificate file")
+    parser.add_argument("--key", help="Path to TLS private key file")
     default_log_level = os.getenv("HTTP_SERVER_LOG_LEVEL", "INFO").upper()
     default_destination = os.getenv("HTTP_SERVER_LOG_DESTINATION", "stdout")
     parser.add_argument(
@@ -293,11 +313,26 @@ def main() -> None:
             "directory": args.directory,
             "log_destination": args.log_destination,
             "log_level": args.log_level,
+            "tls": bool(args.cert and args.key),
         },
     )
     server_socket = socket.create_server((args.host, args.port), reuse_port=True)
+    if args.cert and args.key:
+        try:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(args.cert, args.key)
+            server_socket = context.wrap_socket(server_socket, server_side=True)
+        except ssl.SSLError as e:
+            SERVER_LOGGER.critical("Failed to load TLS certificates", extra={"error": str(e)})
+            sys.exit(1)
+
     while True:
-        client_socket, client_address = server_socket.accept()
+        try:
+            client_socket, client_address = server_socket.accept()
+        except OSError as e:
+            SERVER_LOGGER.error("Socket accept failed", extra={"error": str(e)})
+            continue
+
         SERVER_LOGGER.debug("Accepted client", extra={"client": client_address})
         threading.Thread(
             target=handle_client,
