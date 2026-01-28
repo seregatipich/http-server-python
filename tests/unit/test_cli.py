@@ -1,9 +1,15 @@
 """Golden unit tests validating CLI parsing behavior."""
 
+from pathlib import Path
+from typing import TYPE_CHECKING
+
 from main import parse_cli_args
 
+if TYPE_CHECKING:
+    from _pytest.monkeypatch import MonkeyPatch
 
-def test_parse_cli_args_uses_defaults():
+
+def test_parse_cli_args_uses_defaults() -> None:
     """Defaults ensure server launches with local settings."""
     args = parse_cli_args([])
 
@@ -14,7 +20,7 @@ def test_parse_cli_args_uses_defaults():
     assert args.log_destination == "stdout"
 
 
-def test_parse_cli_args_honors_overrides(tmp_path):
+def test_parse_cli_args_honors_overrides(tmp_path: Path) -> None:
     """Overrides should replace defaults when flags are present."""
     override_dir = tmp_path.as_posix()
 
@@ -40,7 +46,7 @@ def test_parse_cli_args_honors_overrides(tmp_path):
     assert args.log_destination == "server.log"
 
 
-def test_parse_cli_args_honors_environment(monkeypatch):
+def test_parse_cli_args_honors_environment(monkeypatch: "MonkeyPatch") -> None:
     """Environment variables should seed default logging configuration."""
 
     monkeypatch.setenv("HTTP_SERVER_LOG_LEVEL", "warning")

@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import socket
+from typing import TYPE_CHECKING
 
 import pytest
 
 from tests.utils.http import read_http_response
+
+if TYPE_CHECKING:
+    from tests.conftest import ServerProcessInfo
 
 pytestmark = pytest.mark.integration
 
@@ -26,7 +30,9 @@ def build_request(
     return "\r\n".join(lines).encode()
 
 
-def test_multiple_requests_share_connection(server_process):
+def test_multiple_requests_share_connection(
+    server_process: "ServerProcessInfo",
+) -> None:
     """Multiple sequential requests should reuse a single TCP connection."""
 
     host = server_process["host"]

@@ -1,17 +1,24 @@
 """Unit tests validating HTTP response construction logic."""
 
 import gzip
+from pathlib import Path
 
 from main import HttpRequest, build_response
 
 
-def make_request(path, *, method="GET", headers=None, body=b""):
+def make_request(
+    path: str,
+    *,
+    method: str = "GET",
+    headers: dict[str, str] | None = None,
+    body: bytes = b"",
+) -> HttpRequest:
     """Create a request targeted at the main server entry point."""
 
     return HttpRequest(method, path, headers or {}, body)
 
 
-def test_build_response_root_returns_empty_response(tmp_path):
+def test_build_response_root_returns_empty_response(tmp_path: Path) -> None:
     """Root path should return an empty 200 response."""
 
     response = build_response(make_request("/"), str(tmp_path))
@@ -19,7 +26,7 @@ def test_build_response_root_returns_empty_response(tmp_path):
     assert response.body == b""
 
 
-def test_build_response_echo_respects_gzip(tmp_path):
+def test_build_response_echo_respects_gzip(tmp_path: Path) -> None:
     """Echo endpoint should gzip payloads when requested."""
 
     headers = {"accept-encoding": "gzip"}
@@ -30,7 +37,7 @@ def test_build_response_echo_respects_gzip(tmp_path):
     assert gzip.decompress(response.body) == b"sample"
 
 
-def test_file_get_streams_existing_file(tmp_path):
+def test_file_get_streams_existing_file(tmp_path: Path) -> None:
     """Files endpoint should stream bytes via chunked encoding."""
 
     file_path = tmp_path / "data.txt"
@@ -40,7 +47,7 @@ def test_file_get_streams_existing_file(tmp_path):
     assert response.body_iter is not None
 
 
-def test_file_post_persists_payload(tmp_path):
+def test_file_post_persists_payload(tmp_path: Path) -> None:
     """Posting to /files should persist the payload to disk."""
 
     body = b"uploaded"
