@@ -57,6 +57,10 @@ python3 main.py --directory ./data --host 0.0.0.0 --port 4221 \
 
 Environment variables `HTTP_SERVER_LOG_LEVEL` and `HTTP_SERVER_LOG_DESTINATION` override the defaults before CLI parsing.
 
+### 4.4 Request Limits
+
+- `HTTP_SERVER_MAX_BODY_BYTES` controls the maximum allowed request body size (default 5 MiB).
+
 ## 5. Discovering the host IP for LAN access
 
 1. Determine the network interface IP on the server machine:
