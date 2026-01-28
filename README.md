@@ -60,6 +60,27 @@ Environment variables mirror the logging flags:
 - `HTTP_SERVER_LOG_LEVEL`
 - `HTTP_SERVER_LOG_DESTINATION`
 
+## Request lifecycle
+
+1. **Startup and connection control**
+   - `main()` parses CLI flags, configures logging, creates the listening socket, and optionally wraps it in TLS.
+   - `ConnectionLimiter` enforces global/per-IP socket caps before any worker thread is spawned.
+   - Each accepted client runs inside its own daemon `threading.Thread`, enabling keep-alive sessions.
+2. **Request read and validation**
+   - `_read_request_with_validation()` reads bytes with a bounded buffer, enforces `HTTP_SERVER_MAX_BODY_BYTES`, and surfaces structured parser errors.
+   - `validate_request()` whitelists HTTP methods, checks required headers, blocks traversal/null-bytes, and ensures `/files/*` paths stay under the configured root.
+3. **Rate limiting**
+   - `TokenBucketLimiter.consume()` enforces the configured window, returns `RateLimitDecision`, and injects draft `RateLimit-*` headers whether the request is allowed or logged in dry-run.
+4. **Routing and endpoint behavior**
+   - `build_response()` defaults to `404` before dispatching to `/`, `/echo/<msg>`, `/user-agent`, and `/files/<path>`.
+   - `/echo/` and `/user-agent` reuse `text_response()`, which negotiates gzip transparently.
+5. **File sandbox operations**
+   - `resolve_sandbox_path()` resolves all `/files/*` requests inside the configured directory, rejecting requests that would escape via symlinks or `..`.
+   - GET streams files via chunked transfer encoding; POST ensures parent directories exist and writes the exact request body.
+6. **Response serialization**
+   - `send_response()` merges security headers, applies chunked framing when a generator is present, and streams chunks until the handler signals completion.
+   - Responses honor `Connection: close` directives and release rate/connection counters as worker threads unwind.
+
 ## Endpoints
 
 | Method | Path pattern    | Description                               |
