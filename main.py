@@ -13,13 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, Optional, Tuple
 
-from logging_config import configure_logging
 from limits import (
     ConnectionLimiter,
     RateLimitDecision,
     TokenBucketLimiter,
     TokenBucketSettings,
 )
+from logging_config import configure_logging
 
 SERVER_LOGGER = logging.getLogger("http_server.server")
 COMPRESSION_LOGGER = logging.getLogger("http_server.compression")
