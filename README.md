@@ -14,6 +14,7 @@ Threaded HTTP/1.1 server with echo, user-agent inspection, configurable file IO,
 - **Security headers**: Strict-Transport-Security, Content-Security-Policy, and X-Content-Type-Options are attached to every response, including 404s.
 - **Request validation and sandboxing**: `/files/*` is restricted to the configured root, blocking traversal (`..`) and null bytes; uploads enforce `Content-Length` and reject bodies over `HTTP_SERVER_MAX_BODY_BYTES` (default 5 MiB).
 - **Structured logging**: `logging_config.configure_logging()` wires a shared logger hierarchy (`http_server.*`) with configurable destinations and levels.
+- **Connection and rate limiting**: configurable caps for total sockets, per-IP concurrency, and token-bucket request throttling with standards-based RateLimit headers.
 
 ## Requirements
 
@@ -34,7 +35,10 @@ After completing these steps, continue with the detailed [Usage Guide](docs/USAG
 ```bash
 python3 main.py [--directory <path>] [--host <host>] [--port <port>] \
   [--cert <cert.pem>] [--key <key.pem>] \
-  [--log-level <LEVEL>] [--log-destination <stdout|path>]
+  [--log-level <LEVEL>] [--log-destination <stdout|path>] \
+  [--max-connections <int>] [--max-connections-per-ip <int>] \
+  [--rate-limit <int>] [--rate-window-ms <int>] [--burst-capacity <int>] \
+  [--rate-limit-dry-run]
 ```
 
 - `--directory`: root for `/files/*` operations (defaults to the current working directory).
@@ -44,6 +48,12 @@ python3 main.py [--directory <path>] [--host <host>] [--port <port>] \
 - `--log-level`: DEBUG, INFO, WARNING, ERROR, or CRITICAL (default `INFO`).
 - `--log-destination`: `stdout` or a filesystem path. File destinations rotate at 10 MB with five retained backups.
 - `HTTP_SERVER_MAX_BODY_BYTES`: optional override for maximum accepted request body size in bytes (defaults to 5 MiB).
+- `--max-connections` / `HTTP_SERVER_MAX_CONNECTIONS`: global concurrent socket limit (0 disables the cap).
+- `--max-connections-per-ip` / `HTTP_SERVER_MAX_CONNECTIONS_PER_IP`: per-client socket cap (0 disables the cap).
+- `--rate-limit` / `HTTP_SERVER_RATE_LIMIT`: requests allowed per window (0 disables enforcement).
+- `--rate-window-ms` / `HTTP_SERVER_RATE_WINDOW_MS`: window size for the token bucket in milliseconds.
+- `--burst-capacity` / `HTTP_SERVER_BURST_CAPACITY`: bucket capacity to allow short bursts.
+- `--rate-limit-dry-run` / `HTTP_SERVER_RATE_LIMIT_DRY_RUN`: log 429 conditions without blocking traffic.
 
 Environment variables mirror the logging flags:
 

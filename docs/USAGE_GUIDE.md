@@ -60,6 +60,12 @@ Environment variables `HTTP_SERVER_LOG_LEVEL` and `HTTP_SERVER_LOG_DESTINATION` 
 ### 4.4 Request Limits
 
 - `HTTP_SERVER_MAX_BODY_BYTES` controls the maximum allowed request body size (default 5 MiB).
+- `--max-connections` / `HTTP_SERVER_MAX_CONNECTIONS` cap total concurrent sockets (0 disables the cap).
+- `--max-connections-per-ip` / `HTTP_SERVER_MAX_CONNECTIONS_PER_IP` cap per-client sockets (0 disables the cap).
+- `--rate-limit` / `HTTP_SERVER_RATE_LIMIT` set token bucket allowance per window (0 disables enforcement).
+- `--rate-window-ms` / `HTTP_SERVER_RATE_WINDOW_MS` configure the refill window in milliseconds.
+- `--burst-capacity` / `HTTP_SERVER_BURST_CAPACITY` set the bucket size to allow brief bursts.
+- `--rate-limit-dry-run` / `HTTP_SERVER_RATE_LIMIT_DRY_RUN` log limit hits without blocking traffic.
 
 ## 5. Discovering the host IP for LAN access
 

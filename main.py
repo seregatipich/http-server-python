@@ -14,6 +14,12 @@ from pathlib import Path
 from typing import Iterable, Iterator, Optional, Tuple
 
 from logging_config import configure_logging
+from limits import (
+    ConnectionLimiter,
+    RateLimitDecision,
+    TokenBucketLimiter,
+    TokenBucketSettings,
+)
 
 SERVER_LOGGER = logging.getLogger("http_server.server")
 COMPRESSION_LOGGER = logging.getLogger("http_server.compression")
@@ -21,8 +27,27 @@ COMPRESSION_LOGGER = logging.getLogger("http_server.compression")
 HEADER_DELIMITER = b"\r\n\r\n"
 FILES_ENDPOINT_PREFIX = "/files/"
 ALLOWED_METHODS = {"GET", "POST"}
-_body_limit_env = os.getenv("HTTP_SERVER_MAX_BODY_BYTES")
-MAX_BODY_BYTES = int(_body_limit_env) if _body_limit_env is not None else 5 * 1024 * 1024
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    return int(value) if value is not None else default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+MAX_BODY_BYTES = _env_int("HTTP_SERVER_MAX_BODY_BYTES", 5 * 1024 * 1024)
+DEFAULT_MAX_CONNECTIONS = _env_int("HTTP_SERVER_MAX_CONNECTIONS", 200)
+DEFAULT_MAX_CONNECTIONS_PER_IP = _env_int("HTTP_SERVER_MAX_CONNECTIONS_PER_IP", 20)
+DEFAULT_RATE_LIMIT = _env_int("HTTP_SERVER_RATE_LIMIT", 50)
+DEFAULT_RATE_WINDOW_MS = _env_int("HTTP_SERVER_RATE_WINDOW_MS", 10_000)
+DEFAULT_BURST_CAPACITY = _env_int("HTTP_SERVER_BURST_CAPACITY", 25)
+DEFAULT_RATE_LIMIT_DRY_RUN = _env_bool("HTTP_SERVER_RATE_LIMIT_DRY_RUN", False)
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
@@ -62,40 +87,46 @@ class HttpResponse:
 
 
 def handle_client(
-    client_socket: socket.socket, directory: str, client_address: tuple[str, int]
+    client_socket: socket.socket,
+    directory: str,
+    client_address: tuple[str, int],
+    connection_limiter: Optional[ConnectionLimiter] = None,
+    rate_limiter: Optional[TokenBucketLimiter] = None,
 ) -> None:
     """Process requests on a client socket until the connection is closed."""
     buffer = b""
+    client_ip = client_address[0]
     SERVER_LOGGER.debug("Connection opened", extra={"client": client_address})
     try:
         while True:
-            try:
-                request, buffer = receive_request(client_socket, buffer)
-            except RequestEntityTooLarge:
-                SERVER_LOGGER.warning(
-                    "Request body too large", extra={"client": client_address}
-                )
-                send_response(client_socket, entity_too_large_response())
-                break
-            except ForbiddenPath:
-                SERVER_LOGGER.warning(
-                    "Forbidden path",
-                    extra={"client": client_address},
-                )
-                send_response(client_socket, forbidden_response())
-                break
-            except ValueError:
-                SERVER_LOGGER.warning(
-                    "Malformed request", extra={"client": client_address}
-                )
-                send_response(client_socket, bad_request_response())
+            request, buffer, should_terminate = _read_request_with_validation(
+                client_socket,
+                buffer,
+                client_address,
+            )
+            if should_terminate:
                 break
 
+            rate_decision: Optional[RateLimitDecision] = None
+            if rate_limiter is not None and request is not None:
+                rate_decision = rate_limiter.consume(client_ip)
+                if not rate_decision.allowed and not rate_decision.dry_run:
+                    SERVER_LOGGER.warning(
+                        "Rate limit exceeded",
+                        extra={
+                            "client": client_address,
+                            "limit_type": "ip",
+                            "limit": rate_decision.limit,
+                        },
+                    )
+                    send_response(
+                        client_socket,
+                        rate_limited_response(rate_decision, request),
+                    )
+                    break
+
             if request is None:
-                SERVER_LOGGER.debug(
-                    "Client disconnected", extra={"client": client_address}
-                )
-                return
+                continue
 
             validation_response = validate_request(request)
             if validation_response is not None:
@@ -105,6 +136,8 @@ def handle_client(
                 continue
 
             response = build_response(request, directory)
+            if rate_decision is not None:
+                response.headers.update(rate_decision.headers)
             send_response(client_socket, response)
             if response.close_connection:
                 break
@@ -118,8 +151,38 @@ def handle_client(
             "Error handling client", extra={"client": client_address}
         )
     finally:
+        if connection_limiter is not None:
+            connection_limiter.release(client_ip)
         client_socket.close()
         SERVER_LOGGER.debug("Connection closed", extra={"client": client_address})
+
+
+def _read_request_with_validation(
+    client_socket: socket.socket,
+    buffer: bytes,
+    client_address: tuple[str, int],
+) -> tuple[Optional[HttpRequest], bytes, bool]:
+    """Read a request from the socket while enforcing size and path limits."""
+
+    try:
+        request, buffer = receive_request(client_socket, buffer)
+    except RequestEntityTooLarge:
+        SERVER_LOGGER.warning("Request body too large", extra={"client": client_address})
+        send_response(client_socket, entity_too_large_response())
+        return None, b"", True
+    except ForbiddenPath:
+        SERVER_LOGGER.warning("Forbidden path", extra={"client": client_address})
+        send_response(client_socket, forbidden_response())
+        return None, b"", True
+    except ValueError:
+        SERVER_LOGGER.warning("Malformed request", extra={"client": client_address})
+        send_response(client_socket, bad_request_response())
+        return None, b"", True
+
+    if request is None:
+        SERVER_LOGGER.debug("Client disconnected", extra={"client": client_address})
+        return None, buffer, True
+    return request, buffer, False
 
 
 def receive_request(
@@ -406,6 +469,33 @@ def entity_too_large_response() -> HttpResponse:
     return HttpResponse("HTTP/1.1 413 Payload Too Large", SECURITY_HEADERS.copy(), b"", True)
 
 
+def rate_limited_response(decision: RateLimitDecision, request: HttpRequest) -> HttpResponse:
+    """Create a 429 response populated with RateLimit headers."""
+    retry_after = max(1, int(decision.reset_seconds)) if decision.reset_seconds else 1
+    headers = {"Retry-After": str(retry_after), **decision.headers, **SECURITY_HEADERS}
+    body = b"Rate limit exceeded"
+    return HttpResponse(
+        "HTTP/1.1 429 Too Many Requests",
+        headers,
+        body,
+        should_close(request.headers),
+    )
+
+
+def connection_limited_response(limit_type: str | None) -> HttpResponse:
+    """Produce a 503 response describing which connection quota was exceeded."""
+    reason = "Connection limit exceeded"
+    if limit_type:
+        reason = f"{limit_type} connection limit exceeded"
+    headers = {"Retry-After": "1", **SECURITY_HEADERS}
+    return HttpResponse(
+        "HTTP/1.1 503 Service Unavailable",
+        headers,
+        reason.encode(),
+        True,
+    )
+
+
 def method_not_allowed_response(request: HttpRequest) -> HttpResponse:
     """Produce a 405 response enumerating the supported HTTP methods."""
     allow_header = ", ".join(sorted(ALLOWED_METHODS))
@@ -509,6 +599,42 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
         default=default_destination,
         help="stdout or a file path",
     )
+    parser.add_argument(
+        "--max-connections",
+        type=int,
+        default=DEFAULT_MAX_CONNECTIONS,
+        help="Maximum concurrent connections (0 for unlimited)",
+    )
+    parser.add_argument(
+        "--max-connections-per-ip",
+        type=int,
+        default=DEFAULT_MAX_CONNECTIONS_PER_IP,
+        help="Maximum concurrent connections per client IP (0 for unlimited)",
+    )
+    parser.add_argument(
+        "--rate-limit",
+        type=int,
+        default=DEFAULT_RATE_LIMIT,
+        help="Requests allowed per rate window (0 to disable)",
+    )
+    parser.add_argument(
+        "--rate-window-ms",
+        type=int,
+        default=DEFAULT_RATE_WINDOW_MS,
+        help="Rate limit window in milliseconds",
+    )
+    parser.add_argument(
+        "--burst-capacity",
+        type=int,
+        default=DEFAULT_BURST_CAPACITY,
+        help="Token bucket capacity for bursts",
+    )
+    parser.add_argument(
+        "--rate-limit-dry-run",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_RATE_LIMIT_DRY_RUN,
+        help="Log rate limit breaches without enforcing",
+    )
     return parser.parse_args(argv)
 
 
@@ -537,6 +663,21 @@ def main() -> None:
             SERVER_LOGGER.critical("Failed to load TLS certificates", extra={"error": str(e)})
             sys.exit(1)
 
+    connection_limiter = ConnectionLimiter(
+        args.max_connections,
+        args.max_connections_per_ip,
+    )
+    rate_limiter: Optional[TokenBucketLimiter] = None
+    if args.rate_limit > 0 and args.rate_window_ms > 0:
+        rate_limiter = TokenBucketLimiter(
+            TokenBucketSettings(
+                rate_limit=args.rate_limit,
+                window_ms=args.rate_window_ms,
+                burst_capacity=args.burst_capacity,
+                dry_run=args.rate_limit_dry_run,
+            )
+        )
+
     while True:
         try:
             client_socket, client_address = server_socket.accept()
@@ -545,9 +686,15 @@ def main() -> None:
             continue
 
         SERVER_LOGGER.debug("Accepted client", extra={"client": client_address})
+        allowed, limit_type = connection_limiter.acquire(client_address[0])
+        if not allowed:
+            send_response(client_socket, connection_limited_response(limit_type))
+            client_socket.close()
+            continue
+        client_socket.settimeout(60)
         threading.Thread(
             target=handle_client,
-            args=(client_socket, args.directory, client_address),
+            args=(client_socket, args.directory, client_address, connection_limiter, rate_limiter),
             daemon=True,
         ).start()
 
