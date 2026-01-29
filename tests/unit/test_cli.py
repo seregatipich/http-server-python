@@ -3,15 +3,10 @@
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from main import (
-    DEFAULT_BURST_CAPACITY,
-    DEFAULT_MAX_CONNECTIONS,
-    DEFAULT_MAX_CONNECTIONS_PER_IP,
-    DEFAULT_RATE_LIMIT,
-    DEFAULT_RATE_LIMIT_DRY_RUN,
-    DEFAULT_RATE_WINDOW_MS,
-    parse_cli_args,
-)
+from main import (DEFAULT_BURST_CAPACITY, DEFAULT_MAX_CONNECTIONS,
+                  DEFAULT_MAX_CONNECTIONS_PER_IP, DEFAULT_RATE_LIMIT,
+                  DEFAULT_RATE_LIMIT_DRY_RUN, DEFAULT_RATE_WINDOW_MS,
+                  parse_cli_args)
 
 if TYPE_CHECKING:
     from _pytest.monkeypatch import MonkeyPatch

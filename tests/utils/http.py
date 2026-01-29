@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import socket
 import time
 from dataclasses import dataclass
@@ -129,3 +130,28 @@ def _consume_trailing_crlf(sock: socket.socket, buffer: bytes) -> bytes:
             raise RuntimeError("Connection closed before terminating CRLF")
         data += chunk
     return data[len(CRLF) :]
+
+
+def wait_for_healthz_status(
+    host: str, port: int, expected_status: int, timeout: float = 5.0
+) -> bool:
+    """Poll /healthz endpoint until it returns the expected status code."""
+    deadline = time.perf_counter() + timeout
+    while time.perf_counter() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5) as sock:
+                request = b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                sock.sendall(request)
+                response = read_http_response(sock)
+                status_code = int(response.status_line.split()[1])
+                if status_code == expected_status:
+                    return True
+        except (OSError, RuntimeError, ValueError):
+            pass
+        time.sleep(0.1)
+    return False
+
+
+def send_signal_to_process(pid: int, sig: int) -> None:
+    """Send a signal to a process by PID."""
+    os.kill(pid, sig)

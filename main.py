@@ -4,21 +4,19 @@ import argparse
 import gzip
 import logging
 import os
+import signal
 import socket
 import ssl
 import sys
 import threading
+import time
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, Optional, Tuple
 
-from limits import (
-    ConnectionLimiter,
-    RateLimitDecision,
-    TokenBucketLimiter,
-    TokenBucketSettings,
-)
+from limits import (ConnectionLimiter, RateLimitDecision, TokenBucketLimiter,
+                    TokenBucketSettings)
 from logging_config import configure_logging
 
 SERVER_LOGGER = logging.getLogger("http_server.server")
@@ -48,6 +46,8 @@ DEFAULT_RATE_LIMIT = _env_int("HTTP_SERVER_RATE_LIMIT", 50)
 DEFAULT_RATE_WINDOW_MS = _env_int("HTTP_SERVER_RATE_WINDOW_MS", 10_000)
 DEFAULT_BURST_CAPACITY = _env_int("HTTP_SERVER_BURST_CAPACITY", 25)
 DEFAULT_RATE_LIMIT_DRY_RUN = _env_bool("HTTP_SERVER_RATE_LIMIT_DRY_RUN", False)
+DEFAULT_SOCKET_TIMEOUT = _env_int("HTTP_SERVER_SOCKET_TIMEOUT", 60)
+DEFAULT_SHUTDOWN_GRACE_SECONDS = _env_int("HTTP_SERVER_SHUTDOWN_GRACE_SECONDS", 30)
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
@@ -62,6 +62,79 @@ class ForbiddenPath(Exception):
 
 class RequestEntityTooLarge(Exception):
     """Raised when a request body exceeds configured limits."""
+
+
+@dataclass
+class ServerConfig:
+    """Server configuration including timeouts and shutdown settings."""
+
+    socket_timeout: int
+    shutdown_grace_seconds: int
+
+
+class ServerLifecycle:
+    """Manages server lifecycle state and worker thread tracking."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._draining_event = threading.Event()
+        self._workers: set[threading.Thread] = set()
+
+    def should_stop(self) -> bool:
+        """Check if the server should stop accepting new connections."""
+        return self._stop_event.is_set()
+
+    def is_draining(self) -> bool:
+        """Check if the server is in draining mode."""
+        return self._draining_event.is_set()
+
+    def register_worker(self, thread: threading.Thread) -> None:
+        """Register a worker thread for tracking."""
+        with self._lock:
+            self._workers.add(thread)
+
+    def cleanup_worker(self, thread: threading.Thread) -> None:
+        """Remove a worker thread from tracking."""
+        with self._lock:
+            self._workers.discard(thread)
+
+    def has_worker(self, thread: threading.Thread) -> bool:
+        """Return True when the worker is currently tracked."""
+        with self._lock:
+            return thread in self._workers
+
+    def active_worker_count(self) -> int:
+        """Return the number of currently tracked worker threads."""
+        with self._lock:
+            return len(self._workers)
+
+    def begin_draining(self) -> None:
+        """Signal the server to begin graceful shutdown."""
+        self._draining_event.set()
+        self._stop_event.set()
+        SERVER_LOGGER.info("Beginning graceful shutdown")
+
+    def wait_for_workers(self, timeout: float) -> bool:
+        """Wait for all worker threads to complete within the timeout."""
+        deadline = time.monotonic() + timeout
+        while True:
+            with self._lock:
+                self._workers = {w for w in self._workers if w.is_alive()}
+                active_workers = list(self._workers)
+            if not active_workers:
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                SERVER_LOGGER.warning(
+                    "Shutdown timeout exceeded",
+                    extra={"remaining_workers": len(active_workers)},
+                )
+                return False
+            for worker in active_workers:
+                worker.join(timeout=min(0.1, remaining))
+                if time.monotonic() >= deadline:
+                    break
 
 
 @dataclass
@@ -86,19 +159,47 @@ class HttpResponse:
     use_chunked: bool = False
 
 
+@dataclass
+class HandlerContext:
+    """Dependencies shared across handler threads."""
+
+    directory: str
+    connection_limiter: Optional[ConnectionLimiter] = None
+    rate_limiter: Optional[TokenBucketLimiter] = None
+    lifecycle: Optional[ServerLifecycle] = None
+    config: Optional[ServerConfig] = None
+
+
+def _recv_with_deadline(client_socket: socket.socket, deadline_ns: int) -> bytes:
+    """Receive data from socket with a deadline, raising TimeoutError if exceeded."""
+    remaining_ns = deadline_ns - time.monotonic_ns()
+    if remaining_ns <= 0:
+        raise TimeoutError("Request deadline exceeded")
+    timeout_seconds = remaining_ns / 1_000_000_000
+    client_socket.settimeout(timeout_seconds)
+    return client_socket.recv(4096)
+
+
 def handle_client(
     client_socket: socket.socket,
-    directory: str,
     client_address: tuple[str, int],
-    connection_limiter: Optional[ConnectionLimiter] = None,
-    rate_limiter: Optional[TokenBucketLimiter] = None,
+    context: HandlerContext,
 ) -> None:
     """Process requests on a client socket until the connection is closed."""
     buffer = b""
     client_ip = client_address[0]
+    current_thread = threading.current_thread()
+    lifecycle = context.lifecycle
+    if lifecycle is not None:
+        lifecycle.register_worker(current_thread)
+    if context.config is not None:
+        client_socket.settimeout(context.config.socket_timeout)
     SERVER_LOGGER.debug("Connection opened", extra={"client": client_address})
     try:
         while True:
+            if lifecycle is not None and lifecycle.is_draining():
+                send_response(client_socket, draining_response())
+                break
             request, buffer, should_terminate = _read_request_with_validation(
                 client_socket,
                 buffer,
@@ -107,39 +208,17 @@ def handle_client(
             if should_terminate:
                 break
 
-            rate_decision: Optional[RateLimitDecision] = None
-            if rate_limiter is not None and request is not None:
-                rate_decision = rate_limiter.consume(client_ip)
-                if not rate_decision.allowed and not rate_decision.dry_run:
-                    SERVER_LOGGER.warning(
-                        "Rate limit exceeded",
-                        extra={
-                            "client": client_address,
-                            "limit_type": "ip",
-                            "limit": rate_decision.limit,
-                        },
-                    )
-                    send_response(
-                        client_socket,
-                        rate_limited_response(rate_decision, request),
-                    )
-                    break
-
             if request is None:
                 continue
 
-            validation_response = validate_request(request)
-            if validation_response is not None:
-                send_response(client_socket, validation_response)
-                if validation_response.close_connection:
-                    break
-                continue
-
-            response = build_response(request, directory)
-            if rate_decision is not None:
-                response.headers.update(rate_decision.headers)
-            send_response(client_socket, response)
-            if response.close_connection:
+            should_terminate_connection = _process_request(
+                request,
+                context,
+                client_socket,
+                client_address,
+                client_ip,
+            )
+            if should_terminate_connection:
                 break
     except (
         ConnectionError,
@@ -151,10 +230,76 @@ def handle_client(
             "Error handling client", extra={"client": client_address}
         )
     finally:
-        if connection_limiter is not None:
-            connection_limiter.release(client_ip)
+        if context.connection_limiter is not None:
+            context.connection_limiter.release(client_ip)
+        if lifecycle is not None:
+            lifecycle.cleanup_worker(current_thread)
         client_socket.close()
         SERVER_LOGGER.debug("Connection closed", extra={"client": client_address})
+
+
+def _apply_rate_limit(
+    rate_limiter: Optional[TokenBucketLimiter],
+    client_ip: str,
+    client_socket: socket.socket,
+    client_address: tuple[str, int],
+    request: Optional[HttpRequest],
+) -> tuple[Optional[RateLimitDecision], bool]:
+    if rate_limiter is None or request is None:
+        return None, False
+    rate_decision = rate_limiter.consume(client_ip)
+    if rate_decision.allowed or rate_decision.dry_run:
+        return rate_decision, False
+    SERVER_LOGGER.warning(
+        "Rate limit exceeded",
+        extra={
+            "client": client_address,
+            "limit_type": "ip",
+            "limit": rate_decision.limit,
+        },
+    )
+    send_response(client_socket, rate_limited_response(rate_decision, request))
+    return None, True
+
+
+def _handle_validation_response(
+    request: HttpRequest, client_socket: socket.socket
+) -> tuple[bool, bool]:
+    validation_response = validate_request(request)
+    if validation_response is None:
+        return False, False
+    send_response(client_socket, validation_response)
+    return True, validation_response.close_connection
+
+
+def _process_request(
+    request: HttpRequest,
+    context: HandlerContext,
+    client_socket: socket.socket,
+    client_address: tuple[str, int],
+    client_ip: str,
+) -> bool:
+    rate_decision, terminated = _apply_rate_limit(
+        context.rate_limiter,
+        client_ip,
+        client_socket,
+        client_address,
+        request,
+    )
+    if terminated:
+        return True
+
+    handled, validation_requires_close = _handle_validation_response(
+        request, client_socket
+    )
+    if handled:
+        return validation_requires_close
+
+    response = build_response(request, context.directory, context.lifecycle)
+    if rate_decision is not None:
+        response.headers.update(rate_decision.headers)
+    send_response(client_socket, response)
+    return response.close_connection
 
 
 def _read_request_with_validation(
@@ -325,8 +470,13 @@ def resolve_sandbox_path(directory: str, user_path: str) -> Path:
     return target
 
 
-def build_response(request: HttpRequest, directory: str) -> HttpResponse:
+def build_response(
+    request: HttpRequest, directory: str, lifecycle: Optional[ServerLifecycle] = None
+) -> HttpResponse:
     """Route the request to the appropriate handler and return a response."""
+    if request.path == "/healthz":
+        is_draining = lifecycle.is_draining() if lifecycle is not None else False
+        return healthz_response(is_draining)
     response = not_found_response(request)
     if request.path == "/":
         response = empty_response(request)
@@ -496,6 +646,35 @@ def connection_limited_response(limit_type: str | None) -> HttpResponse:
     )
 
 
+def draining_response() -> HttpResponse:
+    """Produce a 503 response indicating the server is draining."""
+    headers = {"Connection": "close", **SECURITY_HEADERS}
+    return HttpResponse(
+        "HTTP/1.1 503 Service Unavailable",
+        headers,
+        b"draining",
+        True,
+    )
+
+
+def healthz_response(is_draining: bool) -> HttpResponse:
+    """Produce a health check response based on server state."""
+    if is_draining:
+        headers = {"Connection": "close", **SECURITY_HEADERS}
+        return HttpResponse(
+            "HTTP/1.1 503 Service Unavailable",
+            headers,
+            b"draining",
+            True,
+        )
+    return HttpResponse(
+        "HTTP/1.1 200 OK",
+        SECURITY_HEADERS.copy(),
+        b"",
+        False,
+    )
+
+
 def method_not_allowed_response(request: HttpRequest) -> HttpResponse:
     """Produce a 405 response enumerating the supported HTTP methods."""
     allow_header = ", ".join(sorted(ALLOWED_METHODS))
@@ -635,33 +814,44 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
         default=DEFAULT_RATE_LIMIT_DRY_RUN,
         help="Log rate limit breaches without enforcing",
     )
+    parser.add_argument(
+        "--socket-timeout",
+        type=int,
+        default=DEFAULT_SOCKET_TIMEOUT,
+        help="Socket timeout in seconds for request processing",
+    )
+    parser.add_argument(
+        "--shutdown-grace-seconds",
+        type=int,
+        default=DEFAULT_SHUTDOWN_GRACE_SECONDS,
+        help="Grace period in seconds for graceful shutdown",
+    )
     return parser.parse_args(argv)
 
 
-def main() -> None:
-    """Start the HTTP server and spawn worker threads per connection."""
-    args = parse_cli_args(sys.argv[1:])
-    configure_logging(args.log_level, args.log_destination)
-    SERVER_LOGGER.info(
-        "Starting HTTP server",
-        extra={
-            "host": args.host,
-            "port": args.port,
-            "directory": args.directory,
-            "log_destination": args.log_destination,
-            "log_level": args.log_level,
-            "tls": bool(args.cert and args.key),
-        },
-    )
+def _create_server_socket(args: argparse.Namespace) -> socket.socket:
     server_socket = socket.create_server((args.host, args.port), reuse_port=True)
+    server_socket.settimeout(0.5)
     if args.cert and args.key:
         try:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.load_cert_chain(args.cert, args.key)
-            server_socket = context.wrap_socket(server_socket, server_side=True)
-        except ssl.SSLError as e:
-            SERVER_LOGGER.critical("Failed to load TLS certificates", extra={"error": str(e)})
+            tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            tls_context.load_cert_chain(args.cert, args.key)
+            server_socket = tls_context.wrap_socket(server_socket, server_side=True)
+        except ssl.SSLError as error:
+            SERVER_LOGGER.critical(
+                "Failed to load TLS certificates",
+                extra={"error": str(error)},
+            )
             sys.exit(1)
+    return server_socket
+
+
+def run_server(
+    args: argparse.Namespace, config: ServerConfig, lifecycle: ServerLifecycle
+) -> None:
+    """Create listening socket and handle client lifecycle."""
+
+    server_socket = _create_server_socket(args)
 
     connection_limiter = ConnectionLimiter(
         args.max_connections,
@@ -678,25 +868,84 @@ def main() -> None:
             )
         )
 
-    while True:
-        try:
-            client_socket, client_address = server_socket.accept()
-        except OSError as e:
-            SERVER_LOGGER.error("Socket accept failed", extra={"error": str(e)})
-            continue
+    handler_context = HandlerContext(
+        directory=args.directory,
+        connection_limiter=connection_limiter,
+        rate_limiter=rate_limiter,
+        lifecycle=lifecycle,
+        config=config,
+    )
 
-        SERVER_LOGGER.debug("Accepted client", extra={"client": client_address})
-        allowed, limit_type = connection_limiter.acquire(client_address[0])
-        if not allowed:
-            send_response(client_socket, connection_limited_response(limit_type))
-            client_socket.close()
-            continue
-        client_socket.settimeout(60)
-        threading.Thread(
-            target=handle_client,
-            args=(client_socket, args.directory, client_address, connection_limiter, rate_limiter),
-            daemon=True,
-        ).start()
+    try:
+        while True:
+            try:
+                client_socket, client_address = server_socket.accept()
+            except socket.timeout:
+                if lifecycle.should_stop():
+                    break
+                continue
+            except OSError as error:
+                if lifecycle.should_stop():
+                    break
+                SERVER_LOGGER.error("Socket accept failed", extra={"error": str(error)})
+                continue
+
+            if lifecycle.is_draining():
+                send_response(client_socket, draining_response())
+                client_socket.close()
+                continue
+
+            SERVER_LOGGER.debug("Accepted client", extra={"client": client_address})
+            allowed, limit_type = connection_limiter.acquire(client_address[0])
+            if not allowed:
+                send_response(client_socket, connection_limited_response(limit_type))
+                client_socket.close()
+                continue
+            thread = threading.Thread(
+                target=handle_client,
+                args=(client_socket, client_address, handler_context),
+                daemon=False,
+            )
+            thread.start()
+    finally:
+        server_socket.close()
+        SERVER_LOGGER.info("Waiting for active connections to complete")
+        lifecycle.wait_for_workers(config.shutdown_grace_seconds)
+        SERVER_LOGGER.info("Server shutdown complete")
+
+
+def main() -> None:
+    """Start the HTTP server and spawn worker threads per connection."""
+    args = parse_cli_args(sys.argv[1:])
+    configure_logging(args.log_level, args.log_destination)
+
+    config = ServerConfig(
+        socket_timeout=args.socket_timeout,
+        shutdown_grace_seconds=args.shutdown_grace_seconds,
+    )
+    lifecycle = ServerLifecycle()
+
+    def shutdown_handler(signum: int, _frame) -> None:
+        SERVER_LOGGER.info("Received shutdown signal", extra={"signal": signum})
+        lifecycle.begin_draining()
+
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    SERVER_LOGGER.info(
+        "Starting HTTP server",
+        extra={
+            "host": args.host,
+            "port": args.port,
+            "directory": args.directory,
+            "log_destination": args.log_destination,
+            "log_level": args.log_level,
+            "tls": bool(args.cert and args.key),
+            "socket_timeout": config.socket_timeout,
+            "shutdown_grace_seconds": config.shutdown_grace_seconds,
+        },
+    )
+    run_server(args, config, lifecycle)
 
 
 if __name__ == "__main__":

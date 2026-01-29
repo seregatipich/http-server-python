@@ -2,15 +2,9 @@
 
 import pytest
 
-from main import (
-    ALLOWED_METHODS,
-    MAX_BODY_BYTES,
-    ForbiddenPath,
-    HttpRequest,
-    entity_too_large_response,
-    resolve_sandbox_path,
-    validate_request,
-)
+from main import (ALLOWED_METHODS, MAX_BODY_BYTES, ForbiddenPath, HttpRequest,
+                  entity_too_large_response, resolve_sandbox_path,
+                  validate_request)
 
 
 def make_request(

@@ -78,3 +78,12 @@ def test_file_round_trip_uses_chunked_transfer(
 
     stored_path = Path(server_process["directory"]) / filename
     assert stored_path.read_bytes() == payload
+
+
+def test_healthz_endpoint_returns_200_when_healthy(base_url: str) -> None:
+    """Health check endpoint should return 200 OK during normal operation."""
+
+    response = requests.get(f"{base_url}/healthz", timeout=5)
+    assert response.status_code == 200
+    assert response.content == b""
+    assert "strict-transport-security" in response.headers

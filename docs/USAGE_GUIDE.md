@@ -140,8 +140,65 @@ python -m pytest -m integration  # server-spawning tests
 
 Integration tests start the server as a subprocess, including TLS coverage when `certs/` contains a valid pair.
 
-## 9. Shutdown and cleanup
+## 9. Graceful shutdown and health checks
 
-- Press `Ctrl+C` in the terminal running `main.py` to stop the server.
+### 9.1 Health check endpoint
+
+The server exposes `GET /healthz` for monitoring and orchestration:
+
+```bash
+# Check server health
+curl -i http://localhost:4221/healthz
+```
+
+- **200 OK**: Server is healthy and accepting traffic.
+- **503 Service Unavailable**: Server is draining and will shut down soon.
+
+### 9.2 Graceful shutdown behavior
+
+When the server receives `SIGTERM` or `SIGINT` (Ctrl+C):
+
+1. The server enters **draining mode** and stops accepting new work.
+2. `/healthz` immediately returns `503 Service Unavailable` with body `draining`.
+3. New connection attempts receive `503` responses.
+4. In-flight requests are allowed to complete within the grace period.
+5. After the grace period expires (default 30 seconds), the server exits.
+
+### 9.3 Configuration
+
+- `--socket-timeout <seconds>`: Maximum time for a single request (default 60).
+- `--shutdown-grace-seconds <seconds>`: Grace period for draining (default 30).
+- `HTTP_SERVER_SOCKET_TIMEOUT`: Environment variable override.
+- `HTTP_SERVER_SHUTDOWN_GRACE_SECONDS`: Environment variable override.
+
+### 9.4 Zero-downtime deployment workflow
+
+For rolling updates or maintenance:
+
+1. **Monitor health**: Poll `/healthz` to confirm the server is healthy (200 OK).
+2. **Signal shutdown**: Send `SIGTERM` to the process (`kill -TERM <pid>`).
+3. **Wait for draining**: Poll `/healthz` until it returns 503.
+4. **Stop routing traffic**: Update load balancer or reverse proxy to remove this instance.
+5. **Wait for completion**: The server will exit after in-flight requests finish.
+6. **Start new instance**: Launch the updated server process.
+
+Example polling script:
+
+```bash
+# Wait for server to enter draining state
+while true; do
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4221/healthz)
+  if [ "$STATUS" = "503" ]; then
+    echo "Server is draining"
+    break
+  fi
+  sleep 0.5
+done
+```
+
+## 10. Shutdown and cleanup
+
+- Press `Ctrl+C` in the terminal running `main.py` to trigger graceful shutdown.
+- The server will complete in-flight requests before exiting.
 - Terminate the virtual environment session with `deactivate` when finished.
 - Remove test files created under the configured `--directory` if they are no longer needed.

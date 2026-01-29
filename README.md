@@ -7,12 +7,14 @@ Threaded HTTP/1.1 server with echo, user-agent inspection, configurable file IO,
 ## Features
 
 - **Concurrency and persistence**: Every connection is handled in a dedicated `threading.Thread`, and sockets remain open for multiple requests unless the client asks to close.
-- **Purpose-built routing**: `/`, `/echo/<message>`, `/user-agent`, and `/files/<path>` cover the core exercise flows without an external framework.
+- **Purpose-built routing**: `/`, `/echo/<message>`, `/user-agent`, `/healthz`, and `/files/<path>` cover the core exercise flows without an external framework.
+- **Graceful shutdown**: SIGTERM/SIGINT trigger a draining phase where new connections receive 503 responses while in-flight requests complete within a configurable grace period.
+- **Health check endpoint**: `GET /healthz` returns 200 OK during normal operation and 503 Service Unavailable when draining, enabling zero-downtime deployments.
 - **Gzip negotiation**: Payloads automatically compress when `Accept-Encoding: gzip` advertises a non-zero quality factor.
 - **File uploads and downloads**: `POST /files/<path>` writes raw bytes to the configured directory and `GET /files/<path>` streams content via `Transfer-Encoding: chunked` for large artifacts.
 - **Transport security**: Passing `--cert` and `--key` enables TLS 1.3 termination directly in the server process.
 - **Security headers**: Strict-Transport-Security, Content-Security-Policy, and X-Content-Type-Options are attached to every response, including 404s.
-- **Request validation and sandboxing**: `/files/*` is restricted to the configured root, blocking traversal (`..`) and null bytes; uploads enforce `Content-Length` and reject bodies over `HTTP_SERVER_MAX_BODY_BYTES` (default 5 MiB).
+- **Request validation and sandboxing**: `/files/*` is restricted to the configured root, blocking traversal (`..`) and null bytes; uploads enforce `Content-Length` and reject bodies over `HTTP_SERVER_MAX_BODY_BYTES` (default 5 MiB).
 - **Structured logging**: `logging_config.configure_logging()` wires a shared logger hierarchy (`http_server.*`) with configurable destinations and levels.
 - **Connection and rate limiting**: configurable caps for total sockets, per-IP concurrency, and token-bucket request throttling with standards-based RateLimit headers.
 
@@ -38,7 +40,8 @@ python3 main.py [--directory <path>] [--host <host>] [--port <port>] \
   [--log-level <LEVEL>] [--log-destination <stdout|path>] \
   [--max-connections <int>] [--max-connections-per-ip <int>] \
   [--rate-limit <int>] [--rate-window-ms <int>] [--burst-capacity <int>] \
-  [--rate-limit-dry-run]
+  [--rate-limit-dry-run] \
+  [--socket-timeout <seconds>] [--shutdown-grace-seconds <seconds>]
 ```
 
 - `--directory`: root for `/files/*` operations (defaults to the current working directory).
@@ -54,6 +57,8 @@ python3 main.py [--directory <path>] [--host <host>] [--port <port>] \
 - `--rate-window-ms` / `HTTP_SERVER_RATE_WINDOW_MS`: window size for the token bucket in milliseconds.
 - `--burst-capacity` / `HTTP_SERVER_BURST_CAPACITY`: bucket capacity to allow short bursts.
 - `--rate-limit-dry-run` / `HTTP_SERVER_RATE_LIMIT_DRY_RUN`: log 429 conditions without blocking traffic.
+- `--socket-timeout` / `HTTP_SERVER_SOCKET_TIMEOUT`: socket timeout in seconds for request processing (default 60).
+- `--shutdown-grace-seconds` / `HTTP_SERVER_SHUTDOWN_GRACE_SECONDS`: grace period in seconds for graceful shutdown (default 30).
 
 Environment variables mirror the logging flags:
 
@@ -83,13 +88,14 @@ Environment variables mirror the logging flags:
 
 ## Endpoints
 
-| Method | Path pattern    | Description                               |
-|--------|-----------------|-------------------------------------------|
-| GET    | `/`             | Returns 200 OK for health checks          |
-| GET    | `/echo/<msg>`   | Responds with `<msg>` as `text/plain`     |
-| GET    | `/user-agent`   | Surfaces the incoming `User-Agent` header |
-| GET    | `/files/<path>` | Streams a file from the configured root   |
-| POST   | `/files/<path>` | Writes the request body to disk           |
+| Method | Path pattern    | Description                                          |
+|--------|-----------------|------------------------------------------------------|
+| GET    | `/`             | Returns 200 OK for health checks                     |
+| GET    | `/healthz`      | Returns 200 OK when healthy, 503 when draining       |
+| GET    | `/echo/<msg>`   | Responds with `<msg>` as `text/plain`                |
+| GET    | `/user-agent`   | Surfaces the incoming `User-Agent` header            |
+| GET    | `/files/<path>` | Streams a file from the configured root              |
+| POST   | `/files/<path>` | Writes the request body to disk                      |
 
 Responses advertise `Content-Encoding: gzip` when the client opts in.
 
