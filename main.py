@@ -15,6 +15,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, Optional, Tuple
 
+from correlation_id import (
+    CorrelationLoggerAdapter,
+    clear_correlation_id,
+    generate_correlation_id,
+    get_correlation_id,
+    set_correlation_id,
+)
 from limits import (
     ConnectionLimiter,
     RateLimitDecision,
@@ -23,8 +30,8 @@ from limits import (
 )
 from logging_config import configure_logging
 
-SERVER_LOGGER = logging.getLogger("http_server.server")
-COMPRESSION_LOGGER = logging.getLogger("http_server.compression")
+SERVER_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.server"), {})
+COMPRESSION_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.compression"), {})
 
 HEADER_DELIMITER = b"\r\n\r\n"
 FILES_ENDPOINT_PREFIX = "/files/"
@@ -198,6 +205,10 @@ def handle_client(
         lifecycle.register_worker(current_thread)
     if context.config is not None:
         client_socket.settimeout(context.config.socket_timeout)
+    
+    correlation_id = generate_correlation_id()
+    set_correlation_id(correlation_id)
+    
     SERVER_LOGGER.debug("Connection opened", extra={"client": client_address})
     try:
         while True:
@@ -240,6 +251,7 @@ def handle_client(
             lifecycle.cleanup_worker(current_thread)
         client_socket.close()
         SERVER_LOGGER.debug("Connection closed", extra={"client": client_address})
+        clear_correlation_id()
 
 
 def _apply_rate_limit(
@@ -350,6 +362,11 @@ def receive_request(
     header_lines = header_block.decode().split("\r\n")
     method, path = parse_request_line(header_lines[0])
     headers = parse_headers(header_lines[1:])
+    
+    incoming_correlation_id = headers.get("x-request-id")
+    if incoming_correlation_id:
+        set_correlation_id(incoming_correlation_id)
+    
     content_length = determine_content_length(method, headers)
 
     while len(remainder) < content_length:
@@ -747,6 +764,11 @@ def should_close(headers: dict[str, str]) -> bool:
 def send_response(client_socket: socket.socket, response: HttpResponse) -> None:
     """Serialize and send the HTTP response over the socket."""
     headers = dict(response.headers)
+    
+    correlation_id = get_correlation_id()
+    if correlation_id:
+        headers["X-Request-ID"] = correlation_id
+    
     if response.use_chunked:
         headers["Transfer-Encoding"] = "chunked"
     else:
