@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import re
+import socket
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 import requests
+
+from main import MAX_BODY_BYTES
 
 pytestmark = pytest.mark.integration
 
@@ -123,9 +126,7 @@ def test_correlation_id_isolated_across_concurrent_requests(base_url: str) -> No
         )
         results[request_id] = response.headers.get("X-Request-ID")
 
-    threads = [
-        threading.Thread(target=make_request, args=(str(i),)) for i in range(10)
-    ]
+    threads = [threading.Thread(target=make_request, args=(str(i),)) for i in range(10)]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -133,9 +134,7 @@ def test_correlation_id_isolated_across_concurrent_requests(base_url: str) -> No
 
     for request_id, correlation_id in results.items():
         expected = f"concurrent-{request_id}"
-        assert (
-            correlation_id == expected
-        ), f"Expected {expected}, got {correlation_id}"
+        assert correlation_id == expected, f"Expected {expected}, got {correlation_id}"
 
 
 def test_correlation_id_with_error_responses(base_url: str) -> None:
@@ -149,3 +148,42 @@ def test_correlation_id_with_error_responses(base_url: str) -> None:
     )
     assert response.status_code == 404
     assert response.headers["X-Request-ID"] == custom_correlation_id
+
+
+def test_payload_too_large_response_includes_correlation_id(
+    server_process,
+) -> None:
+    """Oversized payload rejections must still include correlation IDs."""
+
+    host = server_process["host"]
+    port = server_process["port"]
+    request = (
+        "POST /files/oversized.txt HTTP/1.1\r\n"
+        f"Host: {host}:{port}\r\n"
+        f"Content-Length: {MAX_BODY_BYTES + 1}\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    )
+
+    with socket.create_connection((host, port), timeout=5) as client:
+        client.sendall(request.encode("ascii"))
+        response_bytes = b""
+        while b"\r\n\r\n" not in response_bytes:
+            chunk = client.recv(4096)
+            if not chunk:
+                break
+            response_bytes += chunk
+
+    header_block = response_bytes.split(b"\r\n\r\n", 1)[0].decode()
+    header_lines = header_block.split("\r\n")
+    status_line = header_lines[0]
+    parsed_headers = {}
+    for line in header_lines[1:]:
+        if ": " in line:
+            name, value = line.split(": ", 1)
+            parsed_headers[name.lower()] = value
+
+    assert status_line.startswith("HTTP/1.1 413"), status_line
+    correlation_id = parsed_headers.get("x-request-id")
+    assert correlation_id is not None
+    assert correlation_id != ""

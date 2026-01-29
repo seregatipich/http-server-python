@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-from logging_config import configure_logging
+from logging_config import CorrelationIdFilter, configure_logging
 
 
 def test_configure_logging_stream_handler(monkeypatch):
@@ -49,3 +49,22 @@ def test_configure_logging_file_destination(tmp_path: Path):
     handler.flush()
     contents = destination.read_text()
     assert "file log test" in contents
+
+
+def test_correlation_id_filter_inserts_placeholder_when_missing():
+    """Filter should default correlation_id to '-' for bare records."""
+
+    log_filter = CorrelationIdFilter()
+    record = logging.LogRecord(
+        name="http_server.server",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=0,
+        msg="missing id",
+        args=(),
+        exc_info=None,
+    )
+
+    assert not hasattr(record, "correlation_id")
+    assert log_filter.filter(record)
+    assert record.correlation_id == "-"

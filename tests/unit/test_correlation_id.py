@@ -48,6 +48,19 @@ class TestCorrelationIdContext:
         clear_correlation_id()
         assert get_correlation_id() is None
 
+    def test_sequential_requests_reset_and_refresh_ids(self):
+        """Sequential reuse of a worker thread should not leak IDs."""
+
+        observed_ids = []
+        for _ in range(10):
+            generated = generate_correlation_id()
+            set_correlation_id(generated)
+            observed_ids.append(get_correlation_id())
+            clear_correlation_id()
+            assert get_correlation_id() is None
+
+        assert len(observed_ids) == len(set(observed_ids))
+
     def test_correlation_id_isolated_between_contexts(self):
         """Separate threads keep independent IDs."""
 

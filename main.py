@@ -31,7 +31,9 @@ from limits import (
 from logging_config import configure_logging
 
 SERVER_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.server"), {})
-COMPRESSION_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.compression"), {})
+COMPRESSION_LOGGER = CorrelationLoggerAdapter(
+    logging.getLogger("http_server.compression"), {}
+)
 
 HEADER_DELIMITER = b"\r\n\r\n"
 FILES_ENDPOINT_PREFIX = "/files/"
