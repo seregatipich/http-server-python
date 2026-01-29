@@ -68,6 +68,7 @@ def _launch_server(
 
 class ServerProcessInfo(TypedDict):
     """Metadata describing a running server fixture instance."""
+
     base_url: str
     host: str
     port: int

@@ -51,7 +51,10 @@ class ConnectionLimiter:
 
         with self._lock:
             per_ip_active = self._per_ip.get(client_ip, 0)
-            if self._max_connections_per_ip and per_ip_active >= self._max_connections_per_ip:
+            if (
+                self._max_connections_per_ip
+                and per_ip_active >= self._max_connections_per_ip
+            ):
                 return False, "ip"
             if self._max_connections and self._global_active >= self._max_connections:
                 return False, "global"

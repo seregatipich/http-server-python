@@ -13,9 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from tests.utils.http import (RawHttpResponse, read_http_response, reserve_port,
-                              send_signal_to_process, wait_for_healthz_status,
-                              wait_for_port)
+from tests.utils.http import (
+    RawHttpResponse,
+    read_http_response,
+    reserve_port,
+    send_signal_to_process,
+    wait_for_healthz_status,
+    wait_for_port,
+)
 
 
 @pytest.fixture
@@ -23,7 +28,7 @@ def server_process_info():
     """Start a server process and yield its details."""
     port = reserve_port()
     temp_dir = tempfile.mkdtemp()
-    process = subprocess.Popen(
+    with subprocess.Popen(
         [
             sys.executable,
             "-m",
@@ -42,12 +47,12 @@ def server_process_info():
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         cwd=Path(__file__).parent.parent.parent,
-    )
-    wait_for_port("127.0.0.1", port, timeout=5.0)
-    yield {"process": process, "port": port, "host": "127.0.0.1", "temp_dir": temp_dir}
-    if process.poll() is None:
-        process.terminate()
-        process.wait(timeout=2.0)
+    ) as process:
+        wait_for_port("127.0.0.1", port, timeout=5.0)
+        yield {"process": process, "port": port, "host": "127.0.0.1", "temp_dir": temp_dir}
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=10)
 
 
 def test_healthz_returns_200_during_normal_operation(server_process_info):

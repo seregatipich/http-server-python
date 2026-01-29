@@ -138,13 +138,17 @@ class TestServerLifecycle:
         """Ensure wait_for_workers honors the provided timeout budget."""
 
         class FakeThread:
+            """Mock thread for testing lifecycle timeout behavior."""
+
             def __init__(self) -> None:
                 self.join_calls: list[float] = []
 
             def is_alive(self) -> bool:
+                """Always returns True to simulate a stuck worker."""
                 return True
 
             def join(self, timeout: float) -> None:
+                """Records join timeout calls without actually blocking."""
                 self.join_calls.append(timeout)
 
         lifecycle = ServerLifecycle()

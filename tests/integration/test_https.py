@@ -9,7 +9,9 @@ from typing import Final
 import pytest
 import requests
 
-pytestmark = pytest.mark.filterwarnings("ignore::urllib3.exceptions.InsecureRequestWarning")
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::urllib3.exceptions.InsecureRequestWarning"
+)
 
 # Constants for the test server
 HOST: Final[str] = "localhost"

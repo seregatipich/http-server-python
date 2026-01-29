@@ -63,7 +63,9 @@ def test_token_bucket_dry_run_allows_requests() -> None:
         return time_ns[0]
 
     limiter = TokenBucketLimiter(
-        TokenBucketSettings(rate_limit=1, window_ms=1000, burst_capacity=1, dry_run=True),
+        TokenBucketSettings(
+            rate_limit=1, window_ms=1000, burst_capacity=1, dry_run=True
+        ),
         time_provider=now_ns,
     )
 

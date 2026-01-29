@@ -36,7 +36,9 @@ def _build_handler(destination: Optional[str], level: int) -> logging.Handler:
     return handler
 
 
-def configure_logging(level: str = "INFO", destination: Optional[str] = None) -> logging.Logger:
+def configure_logging(
+    level: str = "INFO", destination: Optional[str] = None
+) -> logging.Logger:
     """Configure and return the project logger with the requested handler."""
     logger = logging.getLogger(LOGGER_NAME)
     numeric_level = _resolve_level(level)

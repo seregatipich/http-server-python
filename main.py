@@ -15,8 +15,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator, Optional, Tuple
 
-from limits import (ConnectionLimiter, RateLimitDecision, TokenBucketLimiter,
-                    TokenBucketSettings)
+from limits import (
+    ConnectionLimiter,
+    RateLimitDecision,
+    TokenBucketLimiter,
+    TokenBucketSettings,
+)
 from logging_config import configure_logging
 
 SERVER_LOGGER = logging.getLogger("http_server.server")
@@ -312,7 +316,9 @@ def _read_request_with_validation(
     try:
         request, buffer = receive_request(client_socket, buffer)
     except RequestEntityTooLarge:
-        SERVER_LOGGER.warning("Request body too large", extra={"client": client_address})
+        SERVER_LOGGER.warning(
+            "Request body too large", extra={"client": client_address}
+        )
         send_response(client_socket, entity_too_large_response())
         return None, b"", True
     except ForbiddenPath:
@@ -381,7 +387,11 @@ def enforce_safe_path(request: HttpRequest) -> Optional[HttpResponse]:
     """Validate that the path conforms to sandbox safety requirements."""
     if not request.path.startswith("/") or "\x00" in request.path:
         return bad_request_response(request)
-    if "/../" in request.path or request.path.endswith("/..") or request.path.startswith("/.."):
+    if (
+        "/../" in request.path
+        or request.path.endswith("/..")
+        or request.path.startswith("/..")
+    ):
         return forbidden_response(request)
     return None
 
@@ -411,7 +421,10 @@ def parse_request_line(request_line: str) -> Tuple[str, str]:
 
     parsed_target = urllib.parse.urlsplit(target)
     path = urllib.parse.unquote(parsed_target.path)
-    if target.startswith(f"{FILES_ENDPOINT_PREFIX}..") or f"{FILES_ENDPOINT_PREFIX}../" in target:
+    if (
+        target.startswith(f"{FILES_ENDPOINT_PREFIX}..")
+        or f"{FILES_ENDPOINT_PREFIX}../" in target
+    ):
         raise ForbiddenPath
     return method, path
 
@@ -616,10 +629,14 @@ def bad_request_response(request: Optional[HttpRequest] = None) -> HttpResponse:
 
 def entity_too_large_response() -> HttpResponse:
     """Produce a 413 response that always closes the connection."""
-    return HttpResponse("HTTP/1.1 413 Payload Too Large", SECURITY_HEADERS.copy(), b"", True)
+    return HttpResponse(
+        "HTTP/1.1 413 Payload Too Large", SECURITY_HEADERS.copy(), b"", True
+    )
 
 
-def rate_limited_response(decision: RateLimitDecision, request: HttpRequest) -> HttpResponse:
+def rate_limited_response(
+    decision: RateLimitDecision, request: HttpRequest
+) -> HttpResponse:
     """Create a 429 response populated with RateLimit headers."""
     retry_after = max(1, int(decision.reset_seconds)) if decision.reset_seconds else 1
     headers = {"Retry-After": str(retry_after), **decision.headers, **SECURITY_HEADERS}
