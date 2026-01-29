@@ -23,6 +23,7 @@ def _launch_server(
     port: int,
     directory: Path,
     extra_args: list[str] | None = None,
+    log_file: Path | None = None,
 ) -> Generator[ServerProcessInfo, None, None]:
     args = [
         sys.executable,
@@ -34,6 +35,8 @@ def _launch_server(
         "--port",
         str(port),
     ]
+    if log_file:
+        args.extend(["--log-destination", str(log_file)])
     if extra_args:
         args.extend(extra_args)
 
@@ -57,6 +60,7 @@ def _launch_server(
             "port": port,
             "directory": directory,
             "process": process,
+            "log_file": log_file,
         }
 
         process.terminate()
@@ -74,6 +78,7 @@ class ServerProcessInfo(TypedDict):
     port: int
     directory: Path
     process: subprocess.Popen[bytes]
+    log_file: Path | None
 
 
 @pytest.fixture(scope="session")
@@ -92,7 +97,8 @@ def _server_process(
     host = "127.0.0.1"
     port = reserve_port(host)
     directory = tmp_path_factory.mktemp("server-files")
-    yield from _launch_server(host, port, directory)
+    log_file = directory / "server.log"
+    yield from _launch_server(host, port, directory, log_file=log_file)
 
 
 @pytest.fixture(name="limited_server_process")
@@ -104,6 +110,7 @@ def _limited_server_process(
     host = "127.0.0.1"
     port = reserve_port(host)
     directory = tmp_path_factory.mktemp("server-files-limited")
+    log_file = directory / "server.log"
     limit_args = [
         "--max-connections",
         "1",
@@ -116,7 +123,7 @@ def _limited_server_process(
         "--burst-capacity",
         "2",
     ]
-    yield from _launch_server(host, port, directory, limit_args)
+    yield from _launch_server(host, port, directory, limit_args, log_file=log_file)
 
 
 @pytest.fixture()

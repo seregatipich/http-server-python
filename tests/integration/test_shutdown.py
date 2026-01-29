@@ -49,7 +49,12 @@ def server_process_info():
         cwd=Path(__file__).parent.parent.parent,
     ) as process:
         wait_for_port("127.0.0.1", port, timeout=5.0)
-        yield {"process": process, "port": port, "host": "127.0.0.1", "temp_dir": temp_dir}
+        yield {
+            "process": process,
+            "port": port,
+            "host": "127.0.0.1",
+            "temp_dir": temp_dir,
+        }
         if process.poll() is None:
             process.terminate()
             process.wait(timeout=10)
