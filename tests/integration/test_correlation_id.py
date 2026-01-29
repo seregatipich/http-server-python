@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 
 def test_server_generates_correlation_id_when_not_provided(base_url: str) -> None:
+    """Server should generate UUID correlation IDs by default."""
     response = requests.get(f"{base_url}/", timeout=5)
     assert response.status_code == 200
     assert "X-Request-ID" in response.headers
@@ -30,6 +31,7 @@ def test_server_generates_correlation_id_when_not_provided(base_url: str) -> Non
 
 
 def test_server_accepts_incoming_correlation_id(base_url: str) -> None:
+    """Server should echo back provided correlation IDs."""
     custom_correlation_id = "custom-request-id-12345"
     response = requests.get(
         f"{base_url}/", headers={"X-Request-ID": custom_correlation_id}, timeout=5
@@ -40,8 +42,9 @@ def test_server_accepts_incoming_correlation_id(base_url: str) -> None:
 
 
 def test_correlation_id_preserved_across_request_types(base_url: str) -> None:
+    """Correlation IDs must persist across endpoints."""
     custom_correlation_id = "test-correlation-xyz"
-    
+
     response1 = requests.get(
         f"{base_url}/echo/test",
         headers={"X-Request-ID": custom_correlation_id},
@@ -49,7 +52,6 @@ def test_correlation_id_preserved_across_request_types(base_url: str) -> None:
     )
     assert response1.status_code == 200
     assert response1.headers["X-Request-ID"] == custom_correlation_id
-    
     response2 = requests.get(
         f"{base_url}/user-agent",
         headers={"X-Request-ID": custom_correlation_id, "User-Agent": "test"},
@@ -62,6 +64,7 @@ def test_correlation_id_preserved_across_request_types(base_url: str) -> None:
 def test_correlation_id_with_file_operations(
     base_url: str, server_process: ServerProcessInfo
 ) -> None:
+    """File endpoints should honor correlation IDs end-to-end."""
     custom_correlation_id = "file-op-correlation-id"
 
     post_response = requests.post(
@@ -82,7 +85,7 @@ def test_correlation_id_with_file_operations(
     assert get_response.headers["X-Request-ID"] == custom_correlation_id
 
     log_file = Path(server_process["log_file"])
-    log_content = log_file.read_text()
+    log_content = log_file.read_text(encoding="utf-8")
     assert "Stored file" in log_content
     assert "Served file" in log_content
     file_op_logs = [
@@ -95,6 +98,7 @@ def test_correlation_id_with_file_operations(
 
 
 def test_different_requests_have_different_correlation_ids(base_url: str) -> None:
+    """Separate requests must receive unique IDs."""
     response1 = requests.get(f"{base_url}/", timeout=5)
     correlation_id1 = response1.headers.get("X-Request-ID")
 
@@ -107,6 +111,7 @@ def test_different_requests_have_different_correlation_ids(base_url: str) -> Non
 
 
 def test_correlation_id_isolated_across_concurrent_requests(base_url: str) -> None:
+    """Concurrent requests keep their provided IDs."""
     results = {}
 
     def make_request(request_id: str):
@@ -134,6 +139,7 @@ def test_correlation_id_isolated_across_concurrent_requests(base_url: str) -> No
 
 
 def test_correlation_id_with_error_responses(base_url: str) -> None:
+    """Error responses should still echo correlation IDs."""
     custom_correlation_id = "error-test-correlation"
 
     response = requests.get(

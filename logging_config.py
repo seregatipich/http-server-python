@@ -15,7 +15,7 @@ MAX_BYTES = 10 * 1024 * 1024
 BACKUP_COUNT = 5
 
 
-class CorrelationIdFilter(logging.Filter):
+class CorrelationIdFilter(logging.Filter):  # pylint: disable=too-few-public-methods
     """Ensure correlation_id field exists in log records."""
 
     def filter(self, record: logging.LogRecord) -> bool:
