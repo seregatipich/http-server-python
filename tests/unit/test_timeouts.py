@@ -134,6 +134,32 @@ class TestServerLifecycle:
             lifecycle.cleanup_worker(thread)
         assert lifecycle.active_worker_count() == 0
 
+    def test_wait_for_workers_respects_configured_timeout(self, monkeypatch):
+        """Ensure wait_for_workers honors the provided timeout budget."""
+
+        class FakeThread:
+            def __init__(self) -> None:
+                self.join_calls: list[float] = []
+
+            def is_alive(self) -> bool:
+                return True
+
+            def join(self, timeout: float) -> None:
+                self.join_calls.append(timeout)
+
+        lifecycle = ServerLifecycle()
+        worker = FakeThread()
+        lifecycle.register_worker(worker)
+
+        monotonic_values = iter([100.0, 100.4, 100.6, 100.6])
+        monkeypatch.setattr(time, "monotonic", lambda: next(monotonic_values))
+
+        result = lifecycle.wait_for_workers(timeout=0.5)
+
+        assert result is False
+        assert len(worker.join_calls) == 1
+        assert worker.join_calls[0] == pytest.approx(0.1, rel=1e-3)
+
 
 class TestServerConfig:
     """Tests for ServerConfig dataclass."""

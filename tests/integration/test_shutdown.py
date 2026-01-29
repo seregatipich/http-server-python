@@ -7,12 +7,13 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
-from tests.utils.http import (read_http_response, reserve_port,
+from tests.utils.http import (RawHttpResponse, read_http_response, reserve_port,
                               send_signal_to_process, wait_for_healthz_status,
                               wait_for_port)
 
@@ -161,3 +162,36 @@ def test_multiple_healthz_requests_during_draining(server_process_info):
             sock.sendall(request)
             response = read_http_response(sock)
             assert response.status_line == "HTTP/1.1 503 Service Unavailable"
+
+
+def test_parallel_healthz_requests_receive_503_during_draining(server_process_info):
+    """Test concurrent /healthz calls receive 503 responses while draining."""
+    host = server_process_info["host"]
+    port = server_process_info["port"]
+    process = server_process_info["process"]
+    assert wait_for_healthz_status(host, port, 200, timeout=2.0)
+    send_signal_to_process(process.pid, signal.SIGTERM)
+    time.sleep(0.2)
+
+    results: list[RawHttpResponse] = []
+    lock = threading.Lock()
+
+    def request_healthz() -> None:
+        with socket.create_connection((host, port), timeout=2.0) as sock:
+            request = b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n\r\n"
+            sock.sendall(request)
+            response = read_http_response(sock)
+        with lock:
+            results.append(response)
+
+    threads = [threading.Thread(target=request_healthz) for _ in range(5)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(results) == 5
+    for response in results:
+        assert response.status_line == "HTTP/1.1 503 Service Unavailable"
+        assert response.body == b"draining"
+        assert response.headers.get("connection") == "close"
