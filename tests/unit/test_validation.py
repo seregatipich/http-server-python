@@ -5,6 +5,7 @@ import pytest
 from cors import (
     CorsConfig,
     apply_cors_headers,
+    determine_allowed_origin,
     is_preflight_request,
     preflight_response,
 )
@@ -333,3 +334,57 @@ def test_preflight_response_with_forbidden_headers():
     )
     response = preflight_response(request, cors_config, SECURITY_HEADERS)
     assert response.headers["Access-Control-Allow-Headers"] == "Content-Type"
+
+
+def test_determine_allowed_origin_mixed_policies():
+    """Select specific origin from mixed allowlist (wildcard + explicit)."""
+    cors_config = CorsConfig(
+        allowed_origins=["*", "https://specific.com"],
+        allowed_methods=["GET"],
+        allowed_headers=[],
+        expose_headers=[],
+        allow_credentials=True,
+        max_age=86400,
+    )
+    assert (
+        determine_allowed_origin("https://specific.com", cors_config)
+        == "https://specific.com"
+    )
+    assert (
+        determine_allowed_origin("https://random.com", cors_config)
+        == "https://random.com"
+    )
+
+
+def test_validate_request_oversized_post_with_origin():
+    """Ensure 413 response includes CORS headers when Origin is present."""
+    cors_config = CorsConfig(
+        allowed_origins=["*"],
+        allowed_methods=["POST"],
+        allowed_headers=[],
+        expose_headers=[],
+        allow_credentials=False,
+        max_age=86400,
+    )
+    payload = b"a" * (MAX_BODY_BYTES + 1)
+    request = make_request(
+        "/files/large",
+        method="POST",
+        headers={"content-length": str(len(payload)), "origin": "https://example.com"},
+        body=payload,
+    )
+
+    response = validate_request(
+        request, ALLOWED_METHODS, MAX_BODY_BYTES, cors_config, SECURITY_HEADERS
+    )
+    assert response is not None
+    assert response.status_line == "HTTP/1.1 413 Payload Too Large"
+    assert "Access-Control-Allow-Origin" not in response.headers
+
+
+def test_options_request_missing_preflight_header_returns_none():
+    """Treat OPTIONS without Access-Control-Request-Method as standard request (pass validation)."""
+    request = make_request(
+        "/", method="OPTIONS", headers={"origin": "https://example.com"}
+    )
+    assert validate_test_request(request) is None

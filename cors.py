@@ -26,7 +26,7 @@ def is_preflight_request(request) -> bool:
     )
 
 
-def _determine_allowed_origin(origin: str, cors_config: CorsConfig) -> Optional[str]:
+def determine_allowed_origin(origin: str, cors_config: CorsConfig) -> Optional[str]:
     """Determine the allowed origin based on CORS configuration."""
     if "*" in cors_config.allowed_origins:
         return origin if cors_config.allow_credentials else "*"
@@ -76,7 +76,7 @@ def apply_cors_headers(
     if not origin:
         return
 
-    allowed_origin = _determine_allowed_origin(origin, cors_config)
+    allowed_origin = determine_allowed_origin(origin, cors_config)
 
     if allowed_origin:
         headers["Access-Control-Allow-Origin"] = allowed_origin
@@ -99,7 +99,7 @@ def preflight_response(
     if cors_config is not None:
         origin = request.headers.get("origin")
         if origin:
-            allowed_origin = _determine_allowed_origin(origin, cors_config)
+            allowed_origin = determine_allowed_origin(origin, cors_config)
             if allowed_origin:
                 _apply_preflight_headers(headers, request, cors_config, allowed_origin)
 

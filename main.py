@@ -465,7 +465,7 @@ def build_response(
             directory,
             cors_config,
             SECURITY_HEADERS,
-            SERVER_LOGGER,
+            server_logger=SERVER_LOGGER,
         )
     elif request.path.startswith("/echo/"):
         response = text_response(

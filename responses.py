@@ -170,9 +170,12 @@ def index_response(
     directory: str,
     cors_config,
     security_headers: dict[str, str],
+    *,
     server_logger,
     document_name: str = "index.html",
 ) -> HttpResponse:
+    """Serve the sandbox index document or return an empty response."""
+    # pylint: disable=too-many-arguments
     try:
         resolved_path = resolve_sandbox_path(directory, document_name)
     except ForbiddenPath:
