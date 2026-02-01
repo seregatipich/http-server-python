@@ -3,7 +3,8 @@
 import gzip
 from pathlib import Path
 
-from main import HttpRequest, build_response
+from http_types import HttpRequest
+from main import build_response
 
 
 def make_request(
@@ -18,12 +19,26 @@ def make_request(
     return HttpRequest(method, path, headers or {}, body)
 
 
-def test_build_response_root_returns_empty_response(tmp_path: Path) -> None:
-    """Root path should return an empty 200 response."""
+def test_build_response_root_returns_empty_response_when_missing_document(
+    tmp_path: Path,
+) -> None:
+    """Root path returns empty 200 when no index document exists."""
 
     response = build_response(make_request("/"), str(tmp_path))
     assert response.status_line == "HTTP/1.1 200 OK"
     assert response.body == b""
+
+
+def test_build_response_root_streams_index_file(tmp_path: Path) -> None:
+    """Root path streams index.html when present."""
+
+    index_file = tmp_path / "index.html"
+    index_file.write_text("<h1>Hello</h1>")
+    response = build_response(make_request("/"), str(tmp_path))
+    assert response.status_line == "HTTP/1.1 200 OK"
+    assert response.body == b""
+    assert response.use_chunked
+    assert response.body_iter is not None
 
 
 def test_build_response_echo_respects_gzip(tmp_path: Path) -> None:

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Local HTTP Server</title>
+    <style>
+        :root {
+            color-scheme: only light;
+        }
+        body { font-family: "Space Grotesk", system-ui, sans-serif; background: linear-gradient(135deg, #fef3c7, #f5d0fe 60%, #e0e7ff); min-height: 100vh; margin: 0; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+        main { width: min(640px, 90vw); background: rgba(255, 255, 255, 0.92); backdrop-filter: blur(12px); border-radius: 24px; padding: 2.5rem; box-shadow: 0 30px 80px rgba(15, 23, 42, 0.18); }
+        h1 { font-size: clamp(2.2rem, 5vw, 3rem); margin-bottom: 0.5rem; color: #0f172a; letter-spacing: -0.03em; }
+        p { color: #475569; font-size: 1.1rem; line-height: 1.8; }
+        .links { margin-top: 2rem; display: flex; flex-wrap: wrap; gap: 1rem; }
+        a { text-decoration: none; padding: 0.85rem 1.4rem; border-radius: 999px; font-weight: 600; letter-spacing: 0.02em; transition: transform 150ms ease, box-shadow 150ms ease; }
+        a.primary { background: #0f172a; color: white; box-shadow: 0 15px 30px rgba(15, 23, 42, 0.35); }
+        a.secondary { background: #f1f5f9; color: #0f172a; box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1); }
+        a:hover { transform: translateY(-3px); }
+        code { background: #f1f5f9; padding: 0.15rem 0.45rem; border-radius: 6px; font-size: 0.95rem; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>http-server-python is running</h1>
+        <p>
+            You’re looking at <code>data/index.html</code> served from the local sandbox directory.
+            Drop additional assets into <code>data/</code> and fetch them via <code>/files/&lt;name&gt;</code>
+            without touching the server code.
+        </p>
+        <div class="links">
+            <a class="primary" href="/files/demo.html">View Demo Document</a>
+            <a class="secondary" href="/echo/hello">Test Echo Endpoint</a>
+        </div>
+    </main>
+</body>
+</html>

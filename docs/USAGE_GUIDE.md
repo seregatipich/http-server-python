@@ -59,13 +59,115 @@ Environment variables `HTTP_SERVER_LOG_LEVEL` and `HTTP_SERVER_LOG_DESTINATION` 
 
 ### 4.4 Request Limits
 
-- `HTTP_SERVER_MAX_BODY_BYTES` controls the maximum allowed request body size (default 5 MiB).
+- `HTTP_SERVER_MAX_BODY_BYTES` controls the maximum allowed request body size (default 5 MiB).
 - `--max-connections` / `HTTP_SERVER_MAX_CONNECTIONS` cap total concurrent sockets (0 disables the cap).
 - `--max-connections-per-ip` / `HTTP_SERVER_MAX_CONNECTIONS_PER_IP` cap per-client sockets (0 disables the cap).
 - `--rate-limit` / `HTTP_SERVER_RATE_LIMIT` set token bucket allowance per window (0 disables enforcement).
 - `--rate-window-ms` / `HTTP_SERVER_RATE_WINDOW_MS` configure the refill window in milliseconds.
 - `--burst-capacity` / `HTTP_SERVER_BURST_CAPACITY` set the bucket size to allow brief bursts.
 - `--rate-limit-dry-run` / `HTTP_SERVER_RATE_LIMIT_DRY_RUN` log limit hits without blocking traffic.
+
+### 4.5 CORS Configuration
+
+The server supports Cross-Origin Resource Sharing (CORS) to enable browser-based clients from different origins to access the API. CORS is configured via CLI arguments or environment variables.
+
+#### Default Behavior
+
+By default, the server allows all origins (`*`) with the following configuration:
+- **Allowed Origins**: `*` (all origins)
+- **Allowed Methods**: `GET`, `POST`, `OPTIONS`
+- **Allowed Headers**: `Content-Type`, `Authorization`
+- **Exposed Headers**: `X-Request-ID`
+- **Allow Credentials**: `false`
+- **Max Age**: `86400` seconds (24 hours)
+
+#### Configuration Options
+
+| CLI Argument | Environment Variable | Default | Description |
+|--------------|---------------------|---------|-------------|
+| `--cors-allowed-origins` | `HTTP_SERVER_CORS_ALLOWED_ORIGINS` | `*` | Comma-separated list of allowed origins |
+| `--cors-allowed-methods` | `HTTP_SERVER_CORS_ALLOWED_METHODS` | `GET,POST,OPTIONS` | Comma-separated list of allowed HTTP methods |
+| `--cors-allowed-headers` | `HTTP_SERVER_CORS_ALLOWED_HEADERS` | `Content-Type,Authorization` | Comma-separated list of allowed request headers |
+| `--cors-expose-headers` | `HTTP_SERVER_CORS_EXPOSE_HEADERS` | `X-Request-ID` | Comma-separated list of headers exposed to the client |
+| `--cors-allow-credentials` | `HTTP_SERVER_CORS_ALLOW_CREDENTIALS` | `false` | Allow credentials (cookies, authorization headers) |
+| `--cors-max-age` | `HTTP_SERVER_CORS_MAX_AGE` | `86400` | Preflight cache duration in seconds |
+
+#### Examples
+
+**Restrict to specific origins:**
+
+```bash
+python3 main.py --directory ./data \
+  --cors-allowed-origins "https://app.example.com,https://admin.example.com"
+```
+
+**Enable credentials with specific origin:**
+
+```bash
+python3 main.py --directory ./data \
+  --cors-allowed-origins "https://app.example.com" \
+  --cors-allow-credentials
+```
+
+**Custom headers and methods:**
+
+```bash
+python3 main.py --directory ./data \
+  --cors-allowed-methods "GET,POST,PUT,DELETE,OPTIONS" \
+  --cors-allowed-headers "Content-Type,Authorization,X-Custom-Header"
+```
+
+#### Testing CORS
+
+**Simple CORS request:**
+
+```bash
+curl -i -H "Origin: https://example.com" http://localhost:4221/echo/test
+```
+
+Expected headers in response:
+- `Access-Control-Allow-Origin: *`
+- `Access-Control-Expose-Headers: X-Request-ID`
+
+**Preflight OPTIONS request:**
+
+```bash
+curl -i -X OPTIONS http://localhost:4221/files/data \
+  -H "Origin: https://example.com" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: Content-Type"
+```
+
+Expected response:
+- Status: `204 No Content`
+- `Access-Control-Allow-Origin: *`
+- `Access-Control-Allow-Methods: GET, POST, OPTIONS`
+- `Access-Control-Allow-Headers: Content-Type, Authorization`
+- `Access-Control-Max-Age: 86400`
+
+**Browser fetch example:**
+
+```javascript
+// From a web page at https://example.com
+fetch('http://localhost:4221/echo/hello', {
+  method: 'GET',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
+.then(response => response.text())
+.then(data => console.log(data));
+```
+
+#### Security Considerations
+
+1. **Never use wildcard (`*`) with credentials**: When `--cors-allow-credentials` is enabled, always specify exact origins. The server automatically enforces this by echoing the specific origin instead of `*`.
+
+2. **Restrict origins in production**: While `*` is convenient for development, production deployments should explicitly list trusted origins.
+
+3. **Minimize exposed headers**: Only expose headers that clients genuinely need to read.
+
+4. **Preflight caching**: The `--cors-max-age` setting controls how long browsers cache preflight responses. Longer values reduce preflight requests but delay configuration changes.
 
 ## 5. Discovering the host IP for LAN access
 
