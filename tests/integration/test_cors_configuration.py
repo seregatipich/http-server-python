@@ -1,3 +1,5 @@
+"""Integration tests for CORS configuration scenarios."""
+
 import pytest
 import requests
 
