@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HTTP Server Demo</title>
+    <style>
+        body { font-family: "Archivo", Arial, sans-serif; margin: 0; padding: 3rem; color: #0f172a; background: radial-gradient(circle at top, #f1f5f9, #e2e8f0 50%, #cbd5f5); }
+        main { max-width: 640px; margin: 0 auto; background: rgba(255, 255, 255, 0.92); border-radius: 16px; padding: 2.5rem; box-shadow: 0 30px 60px rgba(15, 23, 42, 0.2); }
+        h1 { font-size: 2.4rem; letter-spacing: -0.03em; margin-bottom: 0.5rem; }
+        p { font-size: 1.05rem; line-height: 1.8; }
+        .pill { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.85rem; border-radius: 999px; background: #e0e7ff; color: #312e81; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em; }
+        .cta { margin-top: 1.5rem; display: inline-flex; align-items: center; padding: 0.9rem 1.4rem; border-radius: 999px; background: #312e81; color: white; text-decoration: none; font-weight: 600; letter-spacing: 0.02em; transition: transform 150ms ease, box-shadow 150ms ease; box-shadow: 0 15px 30px rgba(49, 46, 129, 0.35); }
+        .cta:hover { transform: translateY(-3px); box-shadow: 0 20px 35px rgba(49, 46, 129, 0.45); }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="pill">Local HTTP Server</div>
+        <h1>Serving HTML without touching the codebase</h1>
+        <p>
+            This document lives in the <code>data/</code> directory and is delivered by the
+            custom <strong>http-server-python</strong> instance via the <code>/files/demo.html</code>
+            route. Because it is a regular file on disk, there is no hardcoded markup in the server
+            implementation itself.
+        </p>
+        <a class="cta" href="/files/demo.html">Reload this page</a>
+    </main>
+</body>
+</html>

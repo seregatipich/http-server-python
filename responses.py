@@ -1,6 +1,7 @@
 """HTTP response builders for the server."""
 
 import gzip
+import mimetypes
 from pathlib import Path
 from typing import Iterator, Optional, Tuple
 
@@ -54,6 +55,37 @@ def stream_file(filepath: Path, chunk_size: int = 65536) -> Iterator[bytes]:
             yield chunk
 
 
+def _content_type_for_path(filepath: Path) -> str:
+    mime_type, _ = mimetypes.guess_type(filepath.as_posix())
+    return mime_type or "application/octet-stream"
+
+
+def _streaming_file_response(
+    request: HttpRequest,
+    resolved_path: Path,
+    cors_config,
+    security_headers: dict[str, str],
+    server_logger,
+) -> HttpResponse:
+    headers = {
+        "Content-Type": _content_type_for_path(resolved_path),
+        **security_headers,
+    }
+    apply_cors_headers(headers, request, cors_config)
+    server_logger.info(
+        "Served file",
+        extra={"path": resolved_path.as_posix(), "method": request.method},
+    )
+    return HttpResponse(
+        "HTTP/1.1 200 OK",
+        headers,
+        b"",
+        should_close(request.headers),
+        body_iter=stream_file(resolved_path),
+        use_chunked=True,
+    )
+
+
 def empty_response(
     request: HttpRequest, cors_config, security_headers: dict[str, str]
 ) -> HttpResponse:
@@ -104,22 +136,8 @@ def file_response(
 
     if request.method == "GET":
         if resolved_path.exists() and resolved_path.is_file():
-            headers = {
-                "Content-Type": "application/octet-stream",
-                **security_headers,
-            }
-            apply_cors_headers(headers, request, cors_config)
-            server_logger.info(
-                "Served file",
-                extra={"path": resolved_path.as_posix(), "method": request.method},
-            )
-            return HttpResponse(
-                "HTTP/1.1 200 OK",
-                headers,
-                b"",
-                should_close(request.headers),
-                body_iter=stream_file(resolved_path),
-                use_chunked=True,
+            return _streaming_file_response(
+                request, resolved_path, cors_config, security_headers, server_logger
             )
         return not_found_response(request, cors_config, security_headers)
     if request.method == "POST":
@@ -145,6 +163,25 @@ def file_response(
         extra={"path": resolved_path.as_posix(), "method": request.method},
     )
     return method_not_allowed_response(request, cors_config, security_headers, None)
+
+
+def index_response(
+    request: HttpRequest,
+    directory: str,
+    cors_config,
+    security_headers: dict[str, str],
+    server_logger,
+    document_name: str = "index.html",
+) -> HttpResponse:
+    try:
+        resolved_path = resolve_sandbox_path(directory, document_name)
+    except ForbiddenPath:
+        return empty_response(request, cors_config, security_headers)
+    if resolved_path.exists() and resolved_path.is_file():
+        return _streaming_file_response(
+            request, resolved_path, cors_config, security_headers, server_logger
+        )
+    return empty_response(request, cors_config, security_headers)
 
 
 def not_found_response(

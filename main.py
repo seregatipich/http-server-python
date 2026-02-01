@@ -33,11 +33,11 @@ from responses import (
     bad_request_response,
     connection_limited_response,
     draining_response,
-    empty_response,
     entity_too_large_response,
     file_response,
     forbidden_response,
     healthz_response,
+    index_response,
     not_found_response,
     rate_limited_response,
     text_response,
@@ -460,7 +460,13 @@ def build_response(
         return healthz_response(is_draining, SECURITY_HEADERS)
     response = not_found_response(request, cors_config, SECURITY_HEADERS)
     if request.path == "/":
-        response = empty_response(request, cors_config, SECURITY_HEADERS)
+        response = index_response(
+            request,
+            directory,
+            cors_config,
+            SECURITY_HEADERS,
+            SERVER_LOGGER,
+        )
     elif request.path.startswith("/echo/"):
         response = text_response(
             request.path[6:], request, cors_config, SECURITY_HEADERS, COMPRESSION_LOGGER
