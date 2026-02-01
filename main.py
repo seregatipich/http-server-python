@@ -1,7 +1,6 @@
 """HTTP server supporting echo, user-agent, and file operations."""
 
 import argparse
-import gzip
 import logging
 import os
 import signal
@@ -12,8 +11,7 @@ import threading
 import time
 import urllib.parse
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Iterable, Iterator, Optional, Tuple
+from typing import Optional, Tuple
 
 from correlation_id import (
     CorrelationLoggerAdapter,
@@ -22,6 +20,8 @@ from correlation_id import (
     get_correlation_id,
     set_correlation_id,
 )
+from cors import CorsConfig, is_preflight_request, preflight_response
+from http_types import HttpRequest, HttpResponse
 from limits import (
     ConnectionLimiter,
     RateLimitDecision,
@@ -29,6 +29,21 @@ from limits import (
     TokenBucketSettings,
 )
 from logging_config import configure_logging
+from responses import (
+    bad_request_response,
+    connection_limited_response,
+    draining_response,
+    empty_response,
+    entity_too_large_response,
+    file_response,
+    forbidden_response,
+    healthz_response,
+    not_found_response,
+    rate_limited_response,
+    text_response,
+)
+from sandbox import ForbiddenPath
+from validation import RequestEntityTooLarge, validate_request
 
 SERVER_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.server"), {})
 COMPRESSION_LOGGER = CorrelationLoggerAdapter(
@@ -37,7 +52,7 @@ COMPRESSION_LOGGER = CorrelationLoggerAdapter(
 
 HEADER_DELIMITER = b"\r\n\r\n"
 FILES_ENDPOINT_PREFIX = "/files/"
-ALLOWED_METHODS = {"GET", "POST"}
+ALLOWED_METHODS = {"GET", "POST", "OPTIONS"}
 
 
 def _env_int(name: str, default: int) -> int:
@@ -52,6 +67,13 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def _env_list(name: str, default: list[str]) -> list[str]:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 MAX_BODY_BYTES = _env_int("HTTP_SERVER_MAX_BODY_BYTES", 5 * 1024 * 1024)
 DEFAULT_MAX_CONNECTIONS = _env_int("HTTP_SERVER_MAX_CONNECTIONS", 200)
 DEFAULT_MAX_CONNECTIONS_PER_IP = _env_int("HTTP_SERVER_MAX_CONNECTIONS_PER_IP", 20)
@@ -61,20 +83,24 @@ DEFAULT_BURST_CAPACITY = _env_int("HTTP_SERVER_BURST_CAPACITY", 25)
 DEFAULT_RATE_LIMIT_DRY_RUN = _env_bool("HTTP_SERVER_RATE_LIMIT_DRY_RUN", False)
 DEFAULT_SOCKET_TIMEOUT = _env_int("HTTP_SERVER_SOCKET_TIMEOUT", 60)
 DEFAULT_SHUTDOWN_GRACE_SECONDS = _env_int("HTTP_SERVER_SHUTDOWN_GRACE_SECONDS", 30)
+DEFAULT_CORS_ALLOWED_ORIGINS = _env_list("HTTP_SERVER_CORS_ALLOWED_ORIGINS", ["*"])
+DEFAULT_CORS_ALLOWED_METHODS = _env_list(
+    "HTTP_SERVER_CORS_ALLOWED_METHODS", ["GET", "POST", "OPTIONS"]
+)
+DEFAULT_CORS_ALLOWED_HEADERS = _env_list(
+    "HTTP_SERVER_CORS_ALLOWED_HEADERS", ["Content-Type", "Authorization"]
+)
+DEFAULT_CORS_EXPOSE_HEADERS = _env_list(
+    "HTTP_SERVER_CORS_EXPOSE_HEADERS", ["X-Request-ID"]
+)
+DEFAULT_CORS_ALLOW_CREDENTIALS = _env_bool("HTTP_SERVER_CORS_ALLOW_CREDENTIALS", False)
+DEFAULT_CORS_MAX_AGE = _env_int("HTTP_SERVER_CORS_MAX_AGE", 86400)
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
     "Content-Security-Policy": "default-src 'self'",
     "X-Content-Type-Options": "nosniff",
 }
-
-
-class ForbiddenPath(Exception):
-    """Raised when a requested path escapes the configured sandbox."""
-
-
-class RequestEntityTooLarge(Exception):
-    """Raised when a request body exceeds configured limits."""
 
 
 @dataclass
@@ -151,28 +177,6 @@ class ServerLifecycle:
 
 
 @dataclass
-class HttpRequest:
-    """Represents a parsed HTTP request."""
-
-    method: str
-    path: str
-    headers: dict[str, str]
-    body: bytes
-
-
-@dataclass
-class HttpResponse:
-    """Represents an HTTP response to be sent to a client."""
-
-    status_line: str
-    headers: dict[str, str]
-    body: bytes
-    close_connection: bool
-    body_iter: Optional[Iterable[bytes]] = None
-    use_chunked: bool = False
-
-
-@dataclass
 class HandlerContext:
     """Dependencies shared across handler threads."""
 
@@ -181,6 +185,7 @@ class HandlerContext:
     rate_limiter: Optional[TokenBucketLimiter] = None
     lifecycle: Optional[ServerLifecycle] = None
     config: Optional[ServerConfig] = None
+    cors_config: Optional[CorsConfig] = None
 
 
 def _recv_with_deadline(client_socket: socket.socket, deadline_ns: int) -> bytes:
@@ -215,7 +220,7 @@ def handle_client(
     try:
         while True:
             if lifecycle is not None and lifecycle.is_draining():
-                send_response(client_socket, draining_response())
+                send_response(client_socket, draining_response(SECURITY_HEADERS))
                 break
             request, buffer, should_terminate = _read_request_with_validation(
                 client_socket,
@@ -276,14 +281,20 @@ def _apply_rate_limit(
             "limit": rate_decision.limit,
         },
     )
-    send_response(client_socket, rate_limited_response(rate_decision, request))
+    send_response(
+        client_socket, rate_limited_response(rate_decision, request, SECURITY_HEADERS)
+    )
     return None, True
 
 
 def _handle_validation_response(
-    request: HttpRequest, client_socket: socket.socket
+    request: HttpRequest,
+    client_socket: socket.socket,
+    cors_config: Optional[CorsConfig],
 ) -> tuple[bool, bool]:
-    validation_response = validate_request(request)
+    validation_response = validate_request(
+        request, ALLOWED_METHODS, MAX_BODY_BYTES, cors_config, SECURITY_HEADERS
+    )
     if validation_response is None:
         return False, False
     send_response(client_socket, validation_response)
@@ -297,6 +308,11 @@ def _process_request(
     client_address: tuple[str, int],
     client_ip: str,
 ) -> bool:
+    if is_preflight_request(request):
+        response = preflight_response(request, context.cors_config, SECURITY_HEADERS)
+        send_response(client_socket, response)
+        return response.close_connection
+
     rate_decision, terminated = _apply_rate_limit(
         context.rate_limiter,
         client_ip,
@@ -308,12 +324,14 @@ def _process_request(
         return True
 
     handled, validation_requires_close = _handle_validation_response(
-        request, client_socket
+        request, client_socket, context.cors_config
     )
     if handled:
         return validation_requires_close
 
-    response = build_response(request, context.directory, context.lifecycle)
+    response = build_response(
+        request, context.directory, context.lifecycle, context.cors_config
+    )
     if rate_decision is not None:
         response.headers.update(rate_decision.headers)
     send_response(client_socket, response)
@@ -333,15 +351,15 @@ def _read_request_with_validation(
         SERVER_LOGGER.warning(
             "Request body too large", extra={"client": client_address}
         )
-        send_response(client_socket, entity_too_large_response())
+        send_response(client_socket, entity_too_large_response(SECURITY_HEADERS))
         return None, b"", True
     except ForbiddenPath:
         SERVER_LOGGER.warning("Forbidden path", extra={"client": client_address})
-        send_response(client_socket, forbidden_response())
+        send_response(client_socket, forbidden_response(None, None, SECURITY_HEADERS))
         return None, b"", True
     except ValueError:
         SERVER_LOGGER.warning("Malformed request", extra={"client": client_address})
-        send_response(client_socket, bad_request_response())
+        send_response(client_socket, bad_request_response(None, None, SECURITY_HEADERS))
         return None, b"", True
 
     if request is None:
@@ -385,7 +403,7 @@ def receive_request(
     return HttpRequest(method, path, headers, body), leftover
 
 
-def parse_headers(lines: Iterable[str]) -> dict[str, str]:
+def parse_headers(lines: list[str]) -> dict[str, str]:
     """Convert raw header lines into a lowercase-keyed dictionary."""
     parsed = {}
     for line in lines:
@@ -393,42 +411,6 @@ def parse_headers(lines: Iterable[str]) -> dict[str, str]:
             name, value = line.split(": ", 1)
             parsed[name.lower()] = value
     return parsed
-
-
-def enforce_allowed_method(request: HttpRequest) -> Optional[HttpResponse]:
-    """Ensure the HTTP method is part of the supported allowlist."""
-    if request.method in ALLOWED_METHODS:
-        return None
-    return method_not_allowed_response(request)
-
-
-def enforce_safe_path(request: HttpRequest) -> Optional[HttpResponse]:
-    """Validate that the path conforms to sandbox safety requirements."""
-    if not request.path.startswith("/") or "\x00" in request.path:
-        return bad_request_response(request)
-    if (
-        "/../" in request.path
-        or request.path.endswith("/..")
-        or request.path.startswith("/..")
-    ):
-        return forbidden_response(request)
-    return None
-
-
-def enforce_post_constraints(request: HttpRequest) -> Optional[HttpResponse]:
-    """Validate POST-specific invariants such as Content-Length and size."""
-    declared_length = request.headers.get("content-length")
-    if declared_length is None:
-        return bad_request_response(request)
-    try:
-        content_length = int(declared_length)
-    except ValueError:
-        return bad_request_response(request)
-    if content_length != len(request.body):
-        return bad_request_response(request)
-    if content_length > MAX_BODY_BYTES:
-        return entity_too_large_response()
-    return None
 
 
 def parse_request_line(request_line: str) -> Tuple[str, str]:
@@ -466,57 +448,28 @@ def determine_content_length(method: str, headers: dict[str, str]) -> int:
     return content_length
 
 
-def validate_request(request: HttpRequest) -> Optional[HttpResponse]:
-    """Return an error response when the request fails validation checks."""
-    method_error = enforce_allowed_method(request)
-    if method_error is not None:
-        return method_error
-
-    path_error = enforce_safe_path(request)
-    if path_error is not None:
-        return path_error
-
-    if request.method != "POST":
-        return None
-
-    return enforce_post_constraints(request)
-
-
-def resolve_sandbox_path(directory: str, user_path: str) -> Path:
-    """Resolve a user-supplied path inside the configured sandbox."""
-    if "\x00" in user_path:
-        raise ForbiddenPath
-
-    directory_root = Path(directory).resolve()
-    relative_part = user_path.lstrip("/")
-    if not relative_part:
-        raise ForbiddenPath
-
-    if ".." in Path(relative_part).parts:
-        raise ForbiddenPath
-
-    target = (directory_root / relative_part).resolve()
-    if not (target == directory_root or directory_root in target.parents):
-        raise ForbiddenPath
-
-    return target
-
-
 def build_response(
-    request: HttpRequest, directory: str, lifecycle: Optional[ServerLifecycle] = None
+    request: HttpRequest,
+    directory: str,
+    lifecycle: Optional[ServerLifecycle] = None,
+    cors_config: Optional[CorsConfig] = None,
 ) -> HttpResponse:
     """Route the request to the appropriate handler and return a response."""
     if request.path == "/healthz":
         is_draining = lifecycle.is_draining() if lifecycle is not None else False
-        return healthz_response(is_draining)
-    response = not_found_response(request)
+        return healthz_response(is_draining, SECURITY_HEADERS)
+    response = not_found_response(request, cors_config, SECURITY_HEADERS)
     if request.path == "/":
-        response = empty_response(request)
+        response = empty_response(request, cors_config, SECURITY_HEADERS)
     elif request.path.startswith("/echo/"):
-        response = text_response(request.path[6:], request)
+        response = text_response(
+            request.path[6:], request, cors_config, SECURITY_HEADERS, COMPRESSION_LOGGER
+        )
     elif request.path == "/user-agent":
         agent = request.headers.get("user-agent", "")
-        response = text_response(agent, request)
+        response = text_response(
+            agent, request, cors_config, SECURITY_HEADERS, COMPRESSION_LOGGER
+        )
     elif request.path.startswith(FILES_ENDPOINT_PREFIX):
         remainder = request.path[len(FILES_ENDPOINT_PREFIX) :]
         is_invalid = (
@@ -526,241 +479,18 @@ def build_response(
             or remainder.startswith("..")
         )
         response = (
-            forbidden_response(request)
+            forbidden_response(request, cors_config, SECURITY_HEADERS)
             if is_invalid
-            else file_response(request, directory)
+            else file_response(
+                request,
+                directory,
+                cors_config,
+                SECURITY_HEADERS,
+                FILES_ENDPOINT_PREFIX,
+                SERVER_LOGGER,
+            )
         )
     return response
-
-
-def empty_response(request: HttpRequest) -> HttpResponse:
-    """Return a 200 OK response with no body."""
-    return HttpResponse(
-        "HTTP/1.1 200 OK", SECURITY_HEADERS.copy(), b"", should_close(request.headers)
-    )
-
-
-def text_response(message: str, request: HttpRequest) -> HttpResponse:
-    """Return a text/plain response, compressing when appropriate."""
-    payload = message.encode()
-    payload, headers = compress_if_gzip_supported(payload, request.headers)
-    base_headers = {"Content-Type": "text/plain", **headers, **SECURITY_HEADERS}
-    return HttpResponse(
-        "HTTP/1.1 200 OK", base_headers, payload, should_close(request.headers)
-    )
-
-
-def file_response(request: HttpRequest, directory: str) -> HttpResponse:
-    """Serve or write a file based on the HTTP method."""
-    filename = request.path[len(FILES_ENDPOINT_PREFIX) :]
-    try:
-        resolved_path = resolve_sandbox_path(directory, filename)
-    except ForbiddenPath:
-        SERVER_LOGGER.warning(
-            "Forbidden path",
-            extra={"path": filename, "method": request.method},
-        )
-        return forbidden_response(request)
-
-    if request.method == "GET":
-        if resolved_path.exists() and resolved_path.is_file():
-            headers = {
-                "Content-Type": "application/octet-stream",
-                **SECURITY_HEADERS,
-            }
-            SERVER_LOGGER.info(
-                "Served file",
-                extra={"path": resolved_path.as_posix(), "method": request.method},
-            )
-            return HttpResponse(
-                "HTTP/1.1 200 OK",
-                headers,
-                b"",
-                should_close(request.headers),
-                body_iter=stream_file(resolved_path),
-                use_chunked=True,
-            )
-        return not_found_response(request)
-    if request.method == "POST":
-        resolved_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(resolved_path, "wb") as file_handle:
-            file_handle.write(request.body)
-        SERVER_LOGGER.info(
-            "Stored file",
-            extra={"path": resolved_path.as_posix(), "method": request.method},
-        )
-        return HttpResponse(
-            "HTTP/1.1 201 Created",
-            SECURITY_HEADERS.copy(),
-            b"",
-            should_close(request.headers),
-        )
-    if resolved_path.is_dir():
-        return forbidden_response(request)
-    SERVER_LOGGER.warning(
-        "Unsupported method",
-        extra={"path": resolved_path.as_posix(), "method": request.method},
-    )
-    return method_not_allowed_response(request)
-
-
-def stream_file(filepath: Path, chunk_size: int = 65536) -> Iterator[bytes]:
-    """Yield file contents in fixed-size chunks for streaming responses."""
-    with open(filepath, "rb") as file_handle:
-        while True:
-            chunk = file_handle.read(chunk_size)
-            if not chunk:
-                break
-            yield chunk
-
-
-def not_found_response(request: HttpRequest) -> HttpResponse:
-    """Return a 404 response reusing the connection preference."""
-    return HttpResponse(
-        "HTTP/1.1 404 Not Found",
-        SECURITY_HEADERS.copy(),
-        b"",
-        should_close(request.headers),
-    )
-
-
-def forbidden_response(request: Optional[HttpRequest] = None) -> HttpResponse:
-    """Produce a 403 response honoring the caller's connection preference."""
-    headers = request.headers if request is not None else {}
-    return HttpResponse(
-        "HTTP/1.1 403 Forbidden",
-        SECURITY_HEADERS.copy(),
-        b"",
-        should_close(headers) if request is not None else True,
-    )
-
-
-def bad_request_response(request: Optional[HttpRequest] = None) -> HttpResponse:
-    """Produce a 400 response honoring the caller's connection preference."""
-    headers = request.headers if request is not None else {}
-    return HttpResponse(
-        "HTTP/1.1 400 Bad Request",
-        SECURITY_HEADERS.copy(),
-        b"",
-        should_close(headers) if request is not None else True,
-    )
-
-
-def entity_too_large_response() -> HttpResponse:
-    """Produce a 413 response that always closes the connection."""
-    return HttpResponse(
-        "HTTP/1.1 413 Payload Too Large", SECURITY_HEADERS.copy(), b"", True
-    )
-
-
-def rate_limited_response(
-    decision: RateLimitDecision, request: HttpRequest
-) -> HttpResponse:
-    """Create a 429 response populated with RateLimit headers."""
-    retry_after = max(1, int(decision.reset_seconds)) if decision.reset_seconds else 1
-    headers = {"Retry-After": str(retry_after), **decision.headers, **SECURITY_HEADERS}
-    body = b"Rate limit exceeded"
-    return HttpResponse(
-        "HTTP/1.1 429 Too Many Requests",
-        headers,
-        body,
-        should_close(request.headers),
-    )
-
-
-def connection_limited_response(limit_type: str | None) -> HttpResponse:
-    """Produce a 503 response describing which connection quota was exceeded."""
-    reason = "Connection limit exceeded"
-    if limit_type:
-        reason = f"{limit_type} connection limit exceeded"
-    headers = {"Retry-After": "1", **SECURITY_HEADERS}
-    return HttpResponse(
-        "HTTP/1.1 503 Service Unavailable",
-        headers,
-        reason.encode(),
-        True,
-    )
-
-
-def draining_response() -> HttpResponse:
-    """Produce a 503 response indicating the server is draining."""
-    headers = {"Connection": "close", **SECURITY_HEADERS}
-    return HttpResponse(
-        "HTTP/1.1 503 Service Unavailable",
-        headers,
-        b"draining",
-        True,
-    )
-
-
-def healthz_response(is_draining: bool) -> HttpResponse:
-    """Produce a health check response based on server state."""
-    if is_draining:
-        headers = {"Connection": "close", **SECURITY_HEADERS}
-        return HttpResponse(
-            "HTTP/1.1 503 Service Unavailable",
-            headers,
-            b"draining",
-            True,
-        )
-    return HttpResponse(
-        "HTTP/1.1 200 OK",
-        SECURITY_HEADERS.copy(),
-        b"",
-        False,
-    )
-
-
-def method_not_allowed_response(request: HttpRequest) -> HttpResponse:
-    """Produce a 405 response enumerating the supported HTTP methods."""
-    allow_header = ", ".join(sorted(ALLOWED_METHODS))
-    headers = {"Allow": allow_header, **SECURITY_HEADERS}
-    return HttpResponse(
-        "HTTP/1.1 405 Method Not Allowed",
-        headers,
-        b"",
-        should_close(request.headers),
-    )
-
-
-def compress_if_gzip_supported(
-    payload: bytes, headers: dict[str, str]
-) -> Tuple[bytes, dict[str, str]]:
-    """Compress the payload when the request advertises gzip support."""
-    if not accepts_gzip(headers):
-        return payload, {}
-    COMPRESSION_LOGGER.debug("Compressed payload", extra={"size": len(payload)})
-    return gzip.compress(payload), {"Content-Encoding": "gzip"}
-
-
-def accepts_gzip(headers: dict[str, str]) -> bool:
-    """Return True when the Accept-Encoding header includes gzip with q>0."""
-    encodings = headers.get("accept-encoding", "")
-    for token in encodings.split(","):
-        value = token.strip()
-        if not value:
-            continue
-        algorithm, _, params = value.partition(";")
-        if algorithm.strip().lower() != "gzip":
-            continue
-        quality = 1.0
-        if params:
-            for param in params.split(";"):
-                key, _, raw_value = param.strip().partition("=")
-                if key.lower() == "q" and raw_value:
-                    try:
-                        quality = float(raw_value)
-                    except ValueError:
-                        quality = 0.0
-                    break
-        if quality > 0:
-            return True
-    return False
-
-
-def should_close(headers: dict[str, str]) -> bool:
-    """Determine whether the connection should be closed after responding."""
-    return headers.get("connection", "").lower() == "close"
 
 
 def send_response(client_socket: socket.socket, response: HttpResponse) -> None:
@@ -867,6 +597,38 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
         default=DEFAULT_SHUTDOWN_GRACE_SECONDS,
         help="Grace period in seconds for graceful shutdown",
     )
+    parser.add_argument(
+        "--cors-allowed-origins",
+        default=",".join(DEFAULT_CORS_ALLOWED_ORIGINS),
+        help="Comma-separated list of allowed CORS origins (default: *)",
+    )
+    parser.add_argument(
+        "--cors-allowed-methods",
+        default=",".join(DEFAULT_CORS_ALLOWED_METHODS),
+        help="Comma-separated list of allowed CORS methods",
+    )
+    parser.add_argument(
+        "--cors-allowed-headers",
+        default=",".join(DEFAULT_CORS_ALLOWED_HEADERS),
+        help="Comma-separated list of allowed CORS headers",
+    )
+    parser.add_argument(
+        "--cors-expose-headers",
+        default=",".join(DEFAULT_CORS_EXPOSE_HEADERS),
+        help="Comma-separated list of exposed CORS headers",
+    )
+    parser.add_argument(
+        "--cors-allow-credentials",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_CORS_ALLOW_CREDENTIALS,
+        help="Allow credentials in CORS requests",
+    )
+    parser.add_argument(
+        "--cors-max-age",
+        type=int,
+        default=DEFAULT_CORS_MAX_AGE,
+        help="CORS preflight cache duration in seconds",
+    )
     return parser.parse_args(argv)
 
 
@@ -909,12 +671,30 @@ def run_server(
             )
         )
 
+    cors_config = CorsConfig(
+        allowed_origins=[
+            o.strip() for o in args.cors_allowed_origins.split(",") if o.strip()
+        ],
+        allowed_methods=[
+            m.strip() for m in args.cors_allowed_methods.split(",") if m.strip()
+        ],
+        allowed_headers=[
+            h.strip() for h in args.cors_allowed_headers.split(",") if h.strip()
+        ],
+        expose_headers=[
+            h.strip() for h in args.cors_expose_headers.split(",") if h.strip()
+        ],
+        allow_credentials=args.cors_allow_credentials,
+        max_age=args.cors_max_age,
+    )
+
     handler_context = HandlerContext(
         directory=args.directory,
         connection_limiter=connection_limiter,
         rate_limiter=rate_limiter,
         lifecycle=lifecycle,
         config=config,
+        cors_config=cors_config,
     )
 
     try:
@@ -932,14 +712,17 @@ def run_server(
                 continue
 
             if lifecycle.is_draining():
-                send_response(client_socket, draining_response())
+                send_response(client_socket, draining_response(SECURITY_HEADERS))
                 client_socket.close()
                 continue
 
             SERVER_LOGGER.debug("Accepted client", extra={"client": client_address})
             allowed, limit_type = connection_limiter.acquire(client_address[0])
             if not allowed:
-                send_response(client_socket, connection_limited_response(limit_type))
+                send_response(
+                    client_socket,
+                    connection_limited_response(limit_type, SECURITY_HEADERS),
+                )
                 client_socket.close()
                 continue
             thread = threading.Thread(

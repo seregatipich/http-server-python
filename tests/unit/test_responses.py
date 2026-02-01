@@ -3,7 +3,8 @@
 import gzip
 from pathlib import Path
 
-from main import HttpRequest, build_response
+from http_types import HttpRequest
+from main import build_response
 
 
 def make_request(
