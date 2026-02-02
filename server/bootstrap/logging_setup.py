@@ -6,7 +6,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional, Union
 
-from correlation_id import CorrelationLoggerAdapter
+from server.domain.correlation_id import CorrelationLoggerAdapter
 
 LOGGER_NAME = "http_server"
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(correlation_id)s] %(name)s :: %(message)s"

@@ -5,7 +5,7 @@ import threading
 import uuid
 from unittest.mock import MagicMock
 
-from correlation_id import (
+from server.domain.correlation_id import (
     CorrelationLoggerAdapter,
     clear_correlation_id,
     generate_correlation_id,

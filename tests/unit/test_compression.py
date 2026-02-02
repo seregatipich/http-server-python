@@ -5,7 +5,7 @@ import logging
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
-from responses import accepts_gzip, compress_if_gzip_supported
+from server.domain.response_builders import accepts_gzip, compress_if_gzip_supported
 
 if TYPE_CHECKING:
     from _pytest.logging import LogCaptureFixture

@@ -1,7 +1,7 @@
 """Unit tests covering HTTP request parsing behavior."""
 
-from http_types import HttpRequest
-from main import parse_headers, receive_request
+from server.domain.http_types import HttpRequest
+from server.pipeline.io import parse_headers, receive_request
 
 
 class FakeSocket:

@@ -1,7 +1,7 @@
 """Request validation utilities for HTTP server."""
 
-from http_types import HttpRequest
-from responses import (
+from server.domain.http_types import HttpRequest
+from server.domain.response_builders import (
     bad_request_response,
     entity_too_large_response,
     forbidden_response,

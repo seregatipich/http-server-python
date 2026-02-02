@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-from logging_config import CorrelationIdFilter, configure_logging
+from server.bootstrap.logging_setup import CorrelationIdFilter, configure_logging
 
 
 def test_configure_logging_stream_handler(monkeypatch):

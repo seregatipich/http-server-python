@@ -3,8 +3,8 @@
 import gzip
 from pathlib import Path
 
-from http_types import HttpRequest
-from main import build_response
+from server.domain.http_types import HttpRequest
+from server.pipeline.router import route_request
 
 
 def make_request(
@@ -24,7 +24,7 @@ def test_build_response_root_returns_empty_response_when_missing_document(
 ) -> None:
     """Root path returns empty 200 when no index document exists."""
 
-    response = build_response(make_request("/"), str(tmp_path))
+    response = route_request(make_request("/"), str(tmp_path))
     assert response.status_line == "HTTP/1.1 200 OK"
     assert response.body == b""
 
@@ -34,7 +34,7 @@ def test_build_response_root_streams_index_file(tmp_path: Path) -> None:
 
     index_file = tmp_path / "index.html"
     index_file.write_text("<h1>Hello</h1>")
-    response = build_response(make_request("/"), str(tmp_path))
+    response = route_request(make_request("/"), str(tmp_path))
     assert response.status_line == "HTTP/1.1 200 OK"
     assert response.body == b""
     assert response.use_chunked
@@ -45,7 +45,7 @@ def test_build_response_echo_respects_gzip(tmp_path: Path) -> None:
     """Echo endpoint should gzip payloads when requested."""
 
     headers = {"accept-encoding": "gzip"}
-    response = build_response(
+    response = route_request(
         make_request("/echo/sample", headers=headers), str(tmp_path)
     )
     assert response.headers.get("Content-Encoding") == "gzip"
@@ -57,7 +57,7 @@ def test_file_get_streams_existing_file(tmp_path: Path) -> None:
 
     file_path = tmp_path / "data.txt"
     file_path.write_bytes(b"payload")
-    response = build_response(make_request(f"/files/{file_path.name}"), str(tmp_path))
+    response = route_request(make_request(f"/files/{file_path.name}"), str(tmp_path))
     assert response.use_chunked
     assert response.body_iter is not None
 
@@ -66,7 +66,7 @@ def test_file_post_persists_payload(tmp_path: Path) -> None:
     """Posting to /files should persist the payload to disk."""
 
     body = b"uploaded"
-    response = build_response(
+    response = route_request(
         make_request("/files/uploaded.txt", method="POST", body=body),
         str(tmp_path),
     )
