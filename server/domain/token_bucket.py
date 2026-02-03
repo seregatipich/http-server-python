@@ -16,6 +16,7 @@ class RateLimitDecision:
     reset_seconds: float
     headers: dict[str, str]
     dry_run: bool
+    window_seconds: float
 
 
 @dataclass(frozen=True)
@@ -66,7 +67,7 @@ class TokenBucketLimiter:
         """Consume a token for the given client IP and return the decision."""
 
         if self._rate_limit == 0 or self._window_ns == 0:
-            return RateLimitDecision(True, 0, 0, 0.0, {}, self._dry_run)
+            return RateLimitDecision(True, 0, 0, 0.0, {}, self._dry_run, 0.0)
 
         now_ns = self._now()
         with self._lock:
@@ -98,6 +99,7 @@ class TokenBucketLimiter:
                 reset_seconds=reset_ns / 1_000_000_000,
                 headers=headers,
                 dry_run=self._dry_run and not allowed,
+                window_seconds=self._window_ns / 1_000_000_000,
             )
 
     def _headers(self, remaining: int, reset_ns: int) -> dict[str, str]:

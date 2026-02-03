@@ -61,16 +61,6 @@ def fixture_mock_lifecycle():
     return lifecycle
 
 
-@pytest.fixture(autouse=True)
-def enable_log_propagation():
-    """Ensure logs propagate to root so caplog can catch them."""
-    logger = logging.getLogger("http_server")
-    old_propagate = logger.propagate
-    logger.propagate = True
-    yield
-    logger.propagate = old_propagate
-
-
 def test_accept_loop_logs_server_listening(
     mock_args, mock_config, mock_lifecycle, caplog
 ):

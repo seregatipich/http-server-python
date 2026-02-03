@@ -119,15 +119,15 @@ def _process_request(
         send_response(client_socket, response)
         return response.close_connection
 
-    rate_decision, terminated = apply_rate_limit(
+    rate_decision, should_stop, should_close = apply_rate_limit(
         context.rate_limiter,
         client_ip,
         client_socket,
         client_address,
         request,
     )
-    if terminated:
-        return True
+    if should_stop:
+        return should_close
 
     handled, validation_requires_close = _handle_validation_response(
         request, client_socket, context.cors_config
@@ -181,7 +181,13 @@ def _cleanup_worker(
         context.connection_limiter.release(resources.client_ip)
     if lifecycle is not None:
         lifecycle.cleanup_worker(resources.thread)
+
+    try:
+        resources.client_socket.shutdown(socket.SHUT_WR)
+    except OSError:
+        pass
     resources.client_socket.close()
+
     WORKER_LOGGER.debug(
         "Socket closed",
         extra={"event": "socket_closed", "client": resources.client_addr_str},
@@ -269,6 +275,17 @@ def handle_client(
                 "client": client_addr_str,
                 "error_type": type(error).__name__,
             },
+        )
+    except Exception as error:  # pylint: disable=broad-except
+        WORKER_LOGGER.error(
+            "Unexpected error in worker",
+            extra={
+                "event": "worker_error",
+                "client": client_addr_str,
+                "error_type": type(error).__name__,
+                "error": str(error),
+            },
+            exc_info=True,
         )
     finally:
         _cleanup_worker(

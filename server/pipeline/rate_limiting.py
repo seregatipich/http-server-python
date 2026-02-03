@@ -22,17 +22,17 @@ def apply_rate_limit(
     client_socket: socket.socket,
     client_address: tuple[str, int],
     request: Optional[HttpRequest],
-) -> tuple[Optional[RateLimitDecision], bool]:
+) -> tuple[Optional[RateLimitDecision], bool, bool]:
     """Check rate limits and send response if exceeded.
 
     Returns:
-        tuple[Optional[RateLimitDecision], bool]:
+        tuple[Optional[RateLimitDecision], bool, bool]:
             - RateLimitDecision: The decision result if allowed or dry-run.
-            - bool: True if the connection should be terminated (limit exceeded),
-                    False otherwise.
+            - bool: True if request processing should stop (limit exceeded).
+            - bool: True if the connection should be terminated.
     """
     if rate_limiter is None or request is None:
-        return None, False
+        return None, False, False
 
     rate_decision = rate_limiter.consume(client_ip)
 
@@ -48,7 +48,7 @@ def apply_rate_limit(
                     "remaining_tokens": rate_decision.remaining,
                 },
             )
-        return rate_decision, False
+        return rate_decision, False, False
 
     if rate_decision.dry_run:
         LIMITER_LOGGER.info(
@@ -60,7 +60,7 @@ def apply_rate_limit(
                 "window_seconds": rate_decision.window_seconds,
             },
         )
-        return rate_decision, False
+        return rate_decision, False, False
 
     LIMITER_LOGGER.warning(
         "Rate limit enforced",
@@ -80,7 +80,10 @@ def apply_rate_limit(
             },
         },
     )
-    send_response(
-        client_socket, rate_limited_response(rate_decision, request, SECURITY_HEADERS)
-    )
-    return None, True
+
+    response = rate_limited_response(rate_decision, request, SECURITY_HEADERS)
+    # Ensure Keep-Alive by not setting close_connection
+    send_response(client_socket, response)
+
+    # Stop processing, but don't close connection (Keep-Alive)
+    return None, True, False

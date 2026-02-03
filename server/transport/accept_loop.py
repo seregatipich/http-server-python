@@ -60,6 +60,50 @@ def _create_rate_limiter(args: argparse.Namespace) -> Optional[TokenBucketLimite
     return None
 
 
+def _handle_accepted_client(
+    client_socket: socket.socket,
+    client_address: tuple[str, int],
+    connection_limiter: ConnectionLimiter,
+    handler_context: WorkerContext,
+) -> None:
+    """Handle a newly accepted client connection."""
+    client_addr_str = f"{client_address[0]}:{client_address[1]}"
+    if ACCEPT_LOGGER.logger.isEnabledFor(logging.DEBUG):
+        ACCEPT_LOGGER.debug(
+            "Client connection accepted",
+            extra={"event": "client_accepted", "client": client_addr_str},
+        )
+
+    allowed, limit_type = connection_limiter.acquire(client_address[0])
+    if not allowed:
+        limit_event = (
+            "connection_limit_reached"
+            if limit_type == "global"
+            else "per_ip_limit_reached"
+        )
+        ACCEPT_LOGGER.warning(
+            "Connection limit reached",
+            extra={
+                "event": limit_event,
+                "client": client_addr_str,
+                "limit_type": limit_type,
+            },
+        )
+        send_response(
+            client_socket,
+            connection_limited_response(limit_type, SECURITY_HEADERS),
+        )
+        client_socket.close()
+        return
+
+    thread = threading.Thread(
+        target=handle_client,
+        args=(client_socket, client_address, handler_context),
+        daemon=False,
+    )
+    thread.start()
+
+
 def run_server(
     args: argparse.Namespace, config: ServerConfig, lifecycle: ServerLifecycle
 ) -> None:
@@ -115,40 +159,9 @@ def run_server(
                 client_socket.close()
                 continue
 
-            client_addr_str = f"{client_address[0]}:{client_address[1]}"
-            if ACCEPT_LOGGER.logger.isEnabledFor(logging.DEBUG):
-                ACCEPT_LOGGER.debug(
-                    "Client connection accepted",
-                    extra={"event": "client_accepted", "client": client_addr_str},
-                )
-
-            allowed, limit_type = connection_limiter.acquire(client_address[0])
-            if not allowed:
-                limit_event = (
-                    "connection_limit_reached"
-                    if limit_type == "global"
-                    else "per_ip_limit_reached"
-                )
-                ACCEPT_LOGGER.warning(
-                    "Connection limit reached",
-                    extra={
-                        "event": limit_event,
-                        "client": client_addr_str,
-                        "limit_type": limit_type,
-                    },
-                )
-                send_response(
-                    client_socket,
-                    connection_limited_response(limit_type, SECURITY_HEADERS),
-                )
-                client_socket.close()
-                continue
-            thread = threading.Thread(
-                target=handle_client,
-                args=(client_socket, client_address, handler_context),
-                daemon=False,
+            _handle_accepted_client(
+                client_socket, client_address, connection_limiter, handler_context
             )
-            thread.start()
     finally:
         server_socket.close()
         ACCEPT_LOGGER.info(
