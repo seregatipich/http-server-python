@@ -26,6 +26,40 @@ ACCEPT_LOGGER = CorrelationLoggerAdapter(
 )
 
 
+def _create_cors_config(args: argparse.Namespace) -> CorsConfig:
+    """Create CORS configuration from CLI arguments."""
+    return CorsConfig(
+        allowed_origins=[
+            o.strip() for o in args.cors_allowed_origins.split(",") if o.strip()
+        ],
+        allowed_methods=[
+            m.strip() for m in args.cors_allowed_methods.split(",") if m.strip()
+        ],
+        allowed_headers=[
+            h.strip() for h in args.cors_allowed_headers.split(",") if h.strip()
+        ],
+        expose_headers=[
+            h.strip() for h in args.cors_expose_headers.split(",") if h.strip()
+        ],
+        allow_credentials=args.cors_allow_credentials,
+        max_age=args.cors_max_age,
+    )
+
+
+def _create_rate_limiter(args: argparse.Namespace) -> Optional[TokenBucketLimiter]:
+    """Create rate limiter if configured."""
+    if args.rate_limit > 0 and args.rate_window_ms > 0:
+        return TokenBucketLimiter(
+            TokenBucketSettings(
+                rate_limit=args.rate_limit,
+                window_ms=args.rate_window_ms,
+                burst_capacity=args.burst_capacity,
+                dry_run=args.rate_limit_dry_run,
+            )
+        )
+    return None
+
+
 def run_server(
     args: argparse.Namespace, config: ServerConfig, lifecycle: ServerLifecycle
 ) -> None:
@@ -47,33 +81,8 @@ def run_server(
         args.max_connections,
         args.max_connections_per_ip,
     )
-    rate_limiter: Optional[TokenBucketLimiter] = None
-    if args.rate_limit > 0 and args.rate_window_ms > 0:
-        rate_limiter = TokenBucketLimiter(
-            TokenBucketSettings(
-                rate_limit=args.rate_limit,
-                window_ms=args.rate_window_ms,
-                burst_capacity=args.burst_capacity,
-                dry_run=args.rate_limit_dry_run,
-            )
-        )
-
-    cors_config = CorsConfig(
-        allowed_origins=[
-            o.strip() for o in args.cors_allowed_origins.split(",") if o.strip()
-        ],
-        allowed_methods=[
-            m.strip() for m in args.cors_allowed_methods.split(",") if m.strip()
-        ],
-        allowed_headers=[
-            h.strip() for h in args.cors_allowed_headers.split(",") if h.strip()
-        ],
-        expose_headers=[
-            h.strip() for h in args.cors_expose_headers.split(",") if h.strip()
-        ],
-        allow_credentials=args.cors_allow_credentials,
-        max_age=args.cors_max_age,
-    )
+    rate_limiter = _create_rate_limiter(args)
+    cors_config = _create_cors_config(args)
 
     handler_context = WorkerContext(
         directory=args.directory,

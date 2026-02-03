@@ -101,7 +101,9 @@ Responses advertise `Content-Encoding: gzip` when the client opts in.
 
 ## Logging
 
-`logging_config.configure_logging()` sets the base logger once, giving the server and compression modules consistent formatting and context. Use `--log-level DEBUG` when you need socket-level traces and revert back to INFO to keep noise low. Point `--log-destination` to a file when long-running tests would overwhelm stdout.
+`server.bootstrap.logging_setup.configure_logging()` sets the base logger once, giving the server and compression modules consistent formatting and context. Use `--log-level DEBUG` when you need socket-level traces and revert back to INFO to keep noise low. Point `--log-destination` to a file when long-running tests would overwhelm stdout.
+
+For a complete list of logged events and their structured fields, see the [Logging Namespace Catalog](docs/logging/namespace_catalog.md).
 
 ## Testing
 

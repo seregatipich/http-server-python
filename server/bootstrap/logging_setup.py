@@ -148,4 +148,15 @@ def configure_logging(
 
     handler = _build_handler(destination, numeric_level, use_json)
     logger.addHandler(handler)
-    return CorrelationLoggerAdapter(logger, {})
+
+    adapter = CorrelationLoggerAdapter(logger, {})
+    adapter.info(
+        "Logging configured",
+        extra={
+            "event": "logging_configured",
+            "level": level,
+            "destination": destination or "stdout",
+            "use_json": use_json,
+        },
+    )
+    return adapter
