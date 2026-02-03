@@ -5,7 +5,7 @@ import threading
 import uuid
 from unittest.mock import MagicMock
 
-from correlation_id import (
+from server.domain.correlation_id import (
     CorrelationLoggerAdapter,
     clear_correlation_id,
     generate_correlation_id,
@@ -88,6 +88,7 @@ class TestCorrelationLoggerAdapter:
     def test_adapter_injects_correlation_id_into_extra(self):
         """Adapter copies ID into extra."""
         mock_logger = MagicMock(spec=logging.Logger)
+        mock_logger.name = "http_server.test"
         adapter = CorrelationLoggerAdapter(mock_logger, {})
 
         test_id = "test-correlation-123"
@@ -99,12 +100,14 @@ class TestCorrelationLoggerAdapter:
         call_args = mock_logger.log.call_args
         assert "extra" in call_args.kwargs
         assert call_args.kwargs["extra"]["correlation_id"] == test_id
+        assert call_args.kwargs["extra"]["component"] == "test"
 
         clear_correlation_id()
 
     def test_adapter_handles_missing_correlation_id(self):
         """Adapter tolerates missing IDs."""
         mock_logger = MagicMock(spec=logging.Logger)
+        mock_logger.name = "http_server.test"
         adapter = CorrelationLoggerAdapter(mock_logger, {})
 
         clear_correlation_id()
@@ -113,11 +116,13 @@ class TestCorrelationLoggerAdapter:
         mock_logger.log.assert_called_once()
         call_args = mock_logger.log.call_args
         extra = call_args.kwargs.get("extra", {})
-        assert "correlation_id" not in extra
+        assert extra["correlation_id"] == "-"
+        assert extra["component"] == "test"
 
     def test_adapter_preserves_existing_extra_fields(self):
         """Adapter keeps existing extra fields."""
         mock_logger = MagicMock(spec=logging.Logger)
+        mock_logger.name = "http_server.test"
         adapter = CorrelationLoggerAdapter(mock_logger, {})
 
         test_id = "test-correlation-456"
@@ -129,6 +134,7 @@ class TestCorrelationLoggerAdapter:
         call_args = mock_logger.log.call_args
         assert "extra" in call_args.kwargs
         assert call_args.kwargs["extra"]["correlation_id"] == test_id
+        assert call_args.kwargs["extra"]["component"] == "test"
         assert call_args.kwargs["extra"]["custom_field"] == "custom_value"
 
         clear_correlation_id()
@@ -136,6 +142,7 @@ class TestCorrelationLoggerAdapter:
     def test_adapter_does_not_modify_original_extra_dict(self):
         """Original extra dict remains untouched."""
         mock_logger = MagicMock(spec=logging.Logger)
+        mock_logger.name = "http_server.test"
         adapter = CorrelationLoggerAdapter(mock_logger, {})
 
         test_id = "test-correlation-789"
@@ -145,6 +152,7 @@ class TestCorrelationLoggerAdapter:
         adapter.info("Test message", extra=original_extra)
 
         assert "correlation_id" not in original_extra
+        assert "component" not in original_extra
         assert original_extra == {"field": "value"}
 
         clear_correlation_id()

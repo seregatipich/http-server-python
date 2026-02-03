@@ -1,9 +1,9 @@
-"""CORS (Cross-Origin Resource Sharing) utilities for HTTP server."""
+"""CORS (Cross-Origin Resource Sharing) utilities for the HTTP server."""
 
 from dataclasses import dataclass
 from typing import Optional
 
-from http_types import HttpResponse, should_close
+from server.domain.http_types import HttpResponse, should_close
 
 
 @dataclass

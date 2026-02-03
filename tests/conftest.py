@@ -43,12 +43,17 @@ def _launch_server(
     with subprocess.Popen(
         args,
         cwd=PROJECT_ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     ) as process:
         try:
             wait_for_port(host, port)
         except Exception:
+            # If startup failed, print stdout/stderr to help debug
+            stdout, stderr = process.communicate(timeout=1)
+            print(f"\nServer stdout:\n{stdout}")
+            print(f"\nServer stderr:\n{stderr}")
             process.terminate()
             process.wait(timeout=5)
             raise

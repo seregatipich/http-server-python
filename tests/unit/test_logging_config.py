@@ -1,9 +1,11 @@
 """Tests for logging configuration helpers."""
 
+import json
 import logging
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from logging_config import CorrelationIdFilter, configure_logging
+from server.bootstrap.logging_setup import CorrelationIdFilter, configure_logging
 
 
 def test_configure_logging_stream_handler(monkeypatch):
@@ -29,9 +31,12 @@ def test_configure_logging_stream_handler(monkeypatch):
         exc_info=None,
     )
     record.correlation_id = "test-id-123"
+    record.component = "server"
     formatted = formatter.format(record)
-    assert "http_server.server" in formatted
-    assert "format test" in formatted
+    log_data = json.loads(formatted)
+    assert log_data["component"] == "server"
+    assert log_data["message"] == "format test"
+    assert log_data["correlation_id"] == "test-id-123"
 
 
 def test_configure_logging_file_destination(tmp_path: Path):
@@ -68,3 +73,25 @@ def test_correlation_id_filter_inserts_placeholder_when_missing():
     assert not hasattr(record, "correlation_id")
     assert log_filter.filter(record)
     assert record.correlation_id == "-"
+
+
+def test_configure_logging_emits_event():
+    """Test that configure_logging emits a 'logging_configured' event."""
+
+    with patch("server.bootstrap.logging_setup._build_handler") as mock_build:
+        mock_handler = MagicMock()
+        mock_handler.level = logging.INFO  # Fix comparison error
+        mock_build.return_value = mock_handler
+
+        configure_logging("INFO", "stdout")
+
+        # Check if the handler received the record
+        assert mock_handler.handle.called
+        # Get the record passed to handle()
+        record = mock_handler.handle.call_args[0][0]
+
+        assert record.msg == "Logging configured"
+        assert record.levelno == logging.INFO
+        assert getattr(record, "event", None) == "logging_configured"
+        assert getattr(record, "destination", None) == "stdout"
+        assert getattr(record, "use_json", None) is True

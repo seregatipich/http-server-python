@@ -7,7 +7,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from main import ServerConfig, ServerLifecycle, _recv_with_deadline
+from server.bootstrap.config import ServerConfig
+from server.lifecycle.state import ServerLifecycle
+from server.transport.worker import _recv_with_deadline
 
 
 class TestRecvWithDeadline:

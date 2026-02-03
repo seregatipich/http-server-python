@@ -2,17 +2,18 @@
 
 import pytest
 
-from cors import (
+from server.bootstrap.config import ALLOWED_METHODS, MAX_BODY_BYTES
+from server.domain.http_types import HttpRequest
+from server.domain.response_builders import entity_too_large_response
+from server.domain.sandbox import ForbiddenPath, resolve_sandbox_path
+from server.pipeline.validation import validate_request
+from server.security.cors import (
     CorsConfig,
     apply_cors_headers,
     determine_allowed_origin,
     is_preflight_request,
     preflight_response,
 )
-from main import ALLOWED_METHODS, MAX_BODY_BYTES
-from responses import HttpRequest, entity_too_large_response
-from sandbox import ForbiddenPath, resolve_sandbox_path
-from validation import validate_request
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",

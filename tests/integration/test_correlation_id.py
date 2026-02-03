@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 import requests
 
-from main import MAX_BODY_BYTES
+from server.bootstrap.config import MAX_BODY_BYTES
 
 pytestmark = pytest.mark.integration
 
@@ -89,13 +89,13 @@ def test_correlation_id_with_file_operations(
 
     log_file = Path(server_process["log_file"])
     log_content = log_file.read_text(encoding="utf-8")
-    assert "Stored file" in log_content
-    assert "Served file" in log_content
+    assert "file_write_complete" in log_content
+    assert "file_read_complete" in log_content
     file_op_logs = [
         line
         for line in log_content.split("\n")
         if custom_correlation_id in line
-        and ("Stored file" in line or "Served file" in line)
+        and ("file_write_complete" in line or "file_read_complete" in line)
     ]
     assert len(file_op_logs) >= 2
 
