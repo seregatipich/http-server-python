@@ -6,7 +6,9 @@ import time
 
 from server.domain.correlation_id import CorrelationLoggerAdapter
 
-LIFECYCLE_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.lifecycle"), {})
+LIFECYCLE_LOGGER = CorrelationLoggerAdapter(
+    logging.getLogger("http_server.lifecycle"), {}
+)
 
 
 class ServerLifecycle:
@@ -30,11 +32,27 @@ class ServerLifecycle:
         """Register a worker thread for tracking."""
         with self._lock:
             self._workers.add(thread)
+            if LIFECYCLE_LOGGER.logger.isEnabledFor(logging.DEBUG):
+                LIFECYCLE_LOGGER.debug(
+                    "Worker thread registered",
+                    extra={
+                        "event": "worker_registered",
+                        "worker_count": len(self._workers),
+                    },
+                )
 
     def cleanup_worker(self, thread: threading.Thread) -> None:
         """Remove a worker thread from tracking."""
         with self._lock:
             self._workers.discard(thread)
+            if LIFECYCLE_LOGGER.logger.isEnabledFor(logging.DEBUG):
+                LIFECYCLE_LOGGER.debug(
+                    "Worker thread unregistered",
+                    extra={
+                        "event": "worker_unregistered",
+                        "worker_count": len(self._workers),
+                    },
+                )
 
     def has_worker(self, thread: threading.Thread) -> bool:
         """Return True when the worker is currently tracked."""
@@ -50,7 +68,9 @@ class ServerLifecycle:
         """Signal the server to begin graceful shutdown."""
         self._draining_event.set()
         self._stop_event.set()
-        LIFECYCLE_LOGGER.info("Beginning graceful shutdown")
+        LIFECYCLE_LOGGER.info(
+            "Graceful shutdown initiated", extra={"event": "draining_started"}
+        )
 
     def wait_for_workers(self, timeout: float) -> bool:
         """Wait for all worker threads to complete within the timeout."""
@@ -64,8 +84,12 @@ class ServerLifecycle:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 LIFECYCLE_LOGGER.warning(
-                    "Shutdown timeout exceeded",
-                    extra={"remaining_workers": len(active_workers)},
+                    "Shutdown grace period expired",
+                    extra={
+                        "event": "shutdown_grace_expired",
+                        "remaining_workers": len(active_workers),
+                        "timeout": timeout,
+                    },
                 )
                 return False
             for worker in active_workers:

@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 from server.bootstrap.config import ServerConfig
+from server.domain.token_bucket import TokenBucketLimiter
 from server.lifecycle.state import ServerLifecycle
 from server.security.cors import CorsConfig
-from server.domain.token_bucket import TokenBucketLimiter
 from server.transport.connection_limiter import ConnectionLimiter
 
 

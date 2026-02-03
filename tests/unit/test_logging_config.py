@@ -1,5 +1,6 @@
 """Tests for logging configuration helpers."""
 
+import json
 import logging
 from pathlib import Path
 
@@ -29,9 +30,12 @@ def test_configure_logging_stream_handler(monkeypatch):
         exc_info=None,
     )
     record.correlation_id = "test-id-123"
+    record.component = "server"
     formatted = formatter.format(record)
-    assert "http_server.server" in formatted
-    assert "format test" in formatted
+    log_data = json.loads(formatted)
+    assert log_data["component"] == "server"
+    assert log_data["message"] == "format test"
+    assert log_data["correlation_id"] == "test-id-123"
 
 
 def test_configure_logging_file_destination(tmp_path: Path):

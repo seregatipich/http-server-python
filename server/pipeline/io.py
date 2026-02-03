@@ -5,7 +5,11 @@ import socket
 import urllib.parse
 from typing import Optional, Tuple
 
-from server.bootstrap.config import FILES_ENDPOINT_PREFIX, HEADER_DELIMITER, MAX_BODY_BYTES
+from server.bootstrap.config import (
+    FILES_ENDPOINT_PREFIX,
+    HEADER_DELIMITER,
+    MAX_BODY_BYTES,
+)
 from server.domain.correlation_id import (
     CorrelationLoggerAdapter,
     get_correlation_id,

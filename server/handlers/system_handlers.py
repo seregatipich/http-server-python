@@ -10,8 +10,8 @@ from server.domain.response_builders import healthz_response, text_response
 from server.lifecycle.state import ServerLifecycle
 from server.security.cors import CorsConfig
 
-COMPRESSION_LOGGER = CorrelationLoggerAdapter(
-    logging.getLogger("http_server.compression"), {}
+SYSTEM_LOGGER = CorrelationLoggerAdapter(
+    logging.getLogger("http_server.handlers.system"), {}
 )
 
 
@@ -20,10 +20,13 @@ def handle_echo(
     cors_config: Optional[CorsConfig],
 ) -> HttpResponse:
     """Handle /echo/ requests by returning the path suffix."""
-    content = request.path[6:]  # Strip "/echo/"
-    return text_response(
-        content, request, cors_config, SECURITY_HEADERS, COMPRESSION_LOGGER
-    )
+    content = request.path[6:]
+    if SYSTEM_LOGGER.logger.isEnabledFor(logging.DEBUG):
+        SYSTEM_LOGGER.debug(
+            "Echo request processed",
+            extra={"event": "echo_request", "content_length": len(content)},
+        )
+    return text_response(content, request, cors_config, SECURITY_HEADERS, SYSTEM_LOGGER)
 
 
 def handle_user_agent(
@@ -32,9 +35,11 @@ def handle_user_agent(
 ) -> HttpResponse:
     """Handle /user-agent requests by returning the User-Agent header."""
     agent = request.headers.get("user-agent", "")
-    return text_response(
-        agent, request, cors_config, SECURITY_HEADERS, COMPRESSION_LOGGER
-    )
+    if SYSTEM_LOGGER.logger.isEnabledFor(logging.DEBUG):
+        SYSTEM_LOGGER.debug(
+            "User-agent request processed", extra={"event": "user_agent_request"}
+        )
+    return text_response(agent, request, cors_config, SECURITY_HEADERS, SYSTEM_LOGGER)
 
 
 def handle_healthz(
@@ -42,4 +47,8 @@ def handle_healthz(
 ) -> HttpResponse:
     """Handle /healthz requests with current server state."""
     is_draining = lifecycle.is_draining() if lifecycle is not None else False
+    SYSTEM_LOGGER.info(
+        "Health check performed",
+        extra={"event": "healthz_check", "draining": is_draining},
+    )
     return healthz_response(is_draining, SECURITY_HEADERS)

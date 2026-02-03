@@ -21,7 +21,9 @@ from server.transport.connection_limiter import ConnectionLimiter
 from server.transport.context import WorkerContext
 from server.transport.worker import handle_client
 
-ACCEPT_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.accept"), {})
+ACCEPT_LOGGER = CorrelationLoggerAdapter(
+    logging.getLogger("http_server.transport.accept"), {}
+)
 
 
 def run_server(
@@ -30,6 +32,16 @@ def run_server(
     """Create listening socket and handle client lifecycle."""
 
     server_socket = create_server_socket(args)
+
+    ACCEPT_LOGGER.info(
+        "Server listening for connections",
+        extra={
+            "event": "server_listening",
+            "host": args.host,
+            "port": args.port,
+            "tls": bool(args.cert and args.key),
+        },
+    )
 
     connection_limiter = ConnectionLimiter(
         args.max_connections,
@@ -83,7 +95,10 @@ def run_server(
             except OSError as error:
                 if lifecycle.should_stop():
                     break
-                ACCEPT_LOGGER.error("Socket accept failed", extra={"error": str(error)})
+                ACCEPT_LOGGER.error(
+                    "Socket accept failed",
+                    extra={"event": "accept_error", "error_type": type(error).__name__},
+                )
                 continue
 
             if lifecycle.is_draining():
@@ -91,9 +106,28 @@ def run_server(
                 client_socket.close()
                 continue
 
-            ACCEPT_LOGGER.debug("Accepted client", extra={"client": client_address})
+            client_addr_str = f"{client_address[0]}:{client_address[1]}"
+            if ACCEPT_LOGGER.logger.isEnabledFor(logging.DEBUG):
+                ACCEPT_LOGGER.debug(
+                    "Client connection accepted",
+                    extra={"event": "client_accepted", "client": client_addr_str},
+                )
+
             allowed, limit_type = connection_limiter.acquire(client_address[0])
             if not allowed:
+                limit_event = (
+                    "connection_limit_reached"
+                    if limit_type == "global"
+                    else "per_ip_limit_reached"
+                )
+                ACCEPT_LOGGER.warning(
+                    "Connection limit reached",
+                    extra={
+                        "event": limit_event,
+                        "client": client_addr_str,
+                        "limit_type": limit_type,
+                    },
+                )
                 send_response(
                     client_socket,
                     connection_limited_response(limit_type, SECURITY_HEADERS),
@@ -108,6 +142,14 @@ def run_server(
             thread.start()
     finally:
         server_socket.close()
-        ACCEPT_LOGGER.info("Waiting for active connections to complete")
+        ACCEPT_LOGGER.info(
+            "Waiting for active connections to complete",
+            extra={
+                "event": "shutdown_waiting",
+                "grace_seconds": config.shutdown_grace_seconds,
+            },
+        )
         lifecycle.wait_for_workers(config.shutdown_grace_seconds)
-        ACCEPT_LOGGER.info("Server shutdown complete")
+        ACCEPT_LOGGER.info(
+            "Server shutdown complete", extra={"event": "server_stopped"}
+        )

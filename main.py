@@ -4,13 +4,13 @@ import logging
 import signal
 import sys
 
-from server.bootstrap.config import parse_cli_args, ServerConfig
+from server.bootstrap.config import ServerConfig, parse_cli_args
 from server.bootstrap.logging_setup import configure_logging
 from server.domain.correlation_id import CorrelationLoggerAdapter
 from server.lifecycle.state import ServerLifecycle
 from server.transport.accept_loop import run_server
 
-SERVER_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.server"), {})
+MAIN_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.main"), {})
 
 
 def main() -> None:
@@ -25,15 +25,19 @@ def main() -> None:
     lifecycle = ServerLifecycle()
 
     def shutdown_handler(signum: int, _frame) -> None:
-        SERVER_LOGGER.info("Received shutdown signal", extra={"signal": signum})
+        MAIN_LOGGER.info(
+            "Shutdown signal received",
+            extra={"event": "shutdown_signal_received", "signal": signum},
+        )
         lifecycle.begin_draining()
 
     signal.signal(signal.SIGTERM, shutdown_handler)
     signal.signal(signal.SIGINT, shutdown_handler)
 
-    SERVER_LOGGER.info(
-        "Starting HTTP server",
+    MAIN_LOGGER.info(
+        "HTTP server starting",
         extra={
+            "event": "server_starting",
             "host": args.host,
             "port": args.port,
             "directory": args.directory,

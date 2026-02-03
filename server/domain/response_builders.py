@@ -3,8 +3,8 @@
 import gzip
 from typing import Optional, Tuple
 
-from server.security.cors import apply_cors_headers
 from server.domain.http_types import HttpRequest, HttpResponse, should_close
+from server.security.cors import apply_cors_headers
 
 
 def accepts_gzip(headers: dict[str, str]) -> bool:

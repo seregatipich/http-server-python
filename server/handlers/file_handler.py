@@ -16,16 +16,28 @@ from server.domain.response_builders import (
 from server.domain.sandbox import ForbiddenPath, resolve_sandbox_path
 from server.security.cors import apply_cors_headers
 
-FILE_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.files"), {})
+FILE_LOGGER = CorrelationLoggerAdapter(
+    logging.getLogger("http_server.handlers.file"), {}
+)
 
 
 def stream_file(filepath: Path, chunk_size: int = 65536) -> Iterator[bytes]:
     """Yield file contents in fixed-size chunks for streaming responses."""
+    if FILE_LOGGER.logger.isEnabledFor(logging.DEBUG):
+        FILE_LOGGER.debug(
+            "File streaming started",
+            extra={"event": "file_streaming_started", "path": filepath.as_posix()},
+        )
     with open(filepath, "rb") as file_handle:
         while True:
             chunk = file_handle.read(chunk_size)
             if not chunk:
                 break
+            if FILE_LOGGER.logger.isEnabledFor(logging.DEBUG):
+                FILE_LOGGER.debug(
+                    "File chunk sent",
+                    extra={"event": "file_chunk_sent", "bytes": len(chunk)},
+                )
             yield chunk
 
 
@@ -46,8 +58,12 @@ def _streaming_file_response(
     }
     apply_cors_headers(headers, request, cors_config)
     FILE_LOGGER.info(
-        "Served file",
-        extra={"path": resolved_path.as_posix(), "method": request.method},
+        "File read operation complete",
+        extra={
+            "event": "file_read_complete",
+            "path": resolved_path.as_posix(),
+            "method": request.method,
+        },
     )
     return HttpResponse(
         "HTTP/1.1 200 OK",
@@ -73,24 +89,58 @@ def file_response(
         resolved_path = resolve_sandbox_path(directory, filename)
     except ForbiddenPath:
         FILE_LOGGER.warning(
-            "Forbidden path",
-            extra={"path": filename, "method": request.method},
+            "Forbidden path access blocked",
+            extra={
+                "event": "forbidden_path",
+                "path": filename,
+                "method": request.method,
+            },
         )
         return forbidden_response(request, cors_config, security_headers)
 
     if request.method == "GET":
         if resolved_path.exists() and resolved_path.is_file():
+            if FILE_LOGGER.logger.isEnabledFor(logging.DEBUG):
+                FILE_LOGGER.debug(
+                    "File read started",
+                    extra={
+                        "event": "file_read_started",
+                        "path": resolved_path.as_posix(),
+                    },
+                )
             return _streaming_file_response(
                 request, resolved_path, cors_config, security_headers
             )
+        FILE_LOGGER.info(
+            "File not found",
+            extra={
+                "event": "file_not_found",
+                "path": resolved_path.as_posix(),
+                "method": request.method,
+            },
+        )
         return not_found_response(request, cors_config, security_headers)
     if request.method == "POST":
+        if FILE_LOGGER.logger.isEnabledFor(logging.DEBUG):
+            FILE_LOGGER.debug(
+                "File write started",
+                extra={
+                    "event": "file_write_started",
+                    "path": resolved_path.as_posix(),
+                    "bytes": len(request.body),
+                },
+            )
         resolved_path.parent.mkdir(parents=True, exist_ok=True)
         with open(resolved_path, "wb") as file_handle:
             file_handle.write(request.body)
         FILE_LOGGER.info(
-            "Stored file",
-            extra={"path": resolved_path.as_posix(), "method": request.method},
+            "File write complete",
+            extra={
+                "event": "file_write_complete",
+                "path": resolved_path.as_posix(),
+                "method": request.method,
+                "bytes_out": len(request.body),
+            },
         )
         headers = security_headers.copy()
         apply_cors_headers(headers, request, cors_config)
