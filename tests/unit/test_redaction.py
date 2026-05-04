@@ -1,6 +1,6 @@
 """Unit tests for sensitive data redaction."""
 
-from server.bootstrap.logging_setup import redact_sensitive
+from server.bootstrap import redact_sensitive
 
 
 def test_redact_authorization_header():

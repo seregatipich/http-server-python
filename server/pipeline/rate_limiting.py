@@ -4,11 +4,15 @@ import logging
 import socket
 from typing import Optional
 
-from server.bootstrap.config import SECURITY_HEADERS
-from server.domain.correlation_id import CorrelationLoggerAdapter
-from server.domain.http_types import HttpRequest
-from server.domain.response_builders import rate_limited_response
-from server.domain.token_bucket import RateLimitDecision, TokenBucketLimiter
+from server.domain import (
+    CorrelationLoggerAdapter,
+    SECURITY_HEADERS,
+    HttpRequest,
+    RateLimitDecision,
+    TokenBucketLimiter,
+    format_client_address,
+    rate_limited_response,
+)
 from server.pipeline.io import send_response
 
 LIMITER_LOGGER = CorrelationLoggerAdapter(
@@ -36,7 +40,7 @@ def apply_rate_limit(
 
     rate_decision = rate_limiter.consume(client_ip)
 
-    client_addr_str = f"{client_address[0]}:{client_address[1]}"
+    client_addr_str = format_client_address(client_address)
 
     if rate_decision.allowed:
         if LIMITER_LOGGER.logger.isEnabledFor(logging.DEBUG):
@@ -82,8 +86,6 @@ def apply_rate_limit(
     )
 
     response = rate_limited_response(rate_decision, request, SECURITY_HEADERS)
-    # Ensure Keep-Alive by not setting close_connection
     send_response(client_socket, response)
 
-    # Stop processing, but don't close connection (Keep-Alive)
-    return None, True, False
+    return None, True, response.close_connection

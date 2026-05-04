@@ -6,24 +6,23 @@ import socket
 import threading
 from typing import Optional
 
-from server.bootstrap.config import SECURITY_HEADERS, ServerConfig
-from server.bootstrap.socket_factory import create_server_socket
-from server.domain.correlation_id import CorrelationLoggerAdapter
-from server.domain.response_builders import (
+from server.bootstrap import ServerConfig, create_server_socket
+from server.domain import (
+    CorsConfig,
+    SECURITY_HEADERS,
+    LifecycleState,
+    TokenBucketLimiter,
+    TokenBucketSettings,
     connection_limited_response,
     draining_response,
+    format_client_address,
 )
-from server.domain.token_bucket import TokenBucketLimiter, TokenBucketSettings
-from server.lifecycle.state import ServerLifecycle
-from server.pipeline.io import send_response
-from server.security.cors import CorsConfig
+from server.pipeline import send_response
 from server.transport.connection_limiter import ConnectionLimiter
 from server.transport.context import WorkerContext
 from server.transport.worker import handle_client
 
-ACCEPT_LOGGER = CorrelationLoggerAdapter(
-    logging.getLogger("http_server.transport.accept"), {}
-)
+ACCEPT_LOGGER = logging.getLogger("http_server.transport.accept")
 
 
 def _create_cors_config(args: argparse.Namespace) -> CorsConfig:
@@ -67,8 +66,8 @@ def _handle_accepted_client(
     handler_context: WorkerContext,
 ) -> None:
     """Handle a newly accepted client connection."""
-    client_addr_str = f"{client_address[0]}:{client_address[1]}"
-    if ACCEPT_LOGGER.logger.isEnabledFor(logging.DEBUG):
+    client_addr_str = format_client_address(client_address)
+    if ACCEPT_LOGGER.isEnabledFor(logging.DEBUG):
         ACCEPT_LOGGER.debug(
             "Client connection accepted",
             extra={"event": "client_accepted", "client": client_addr_str},
@@ -104,8 +103,88 @@ def _handle_accepted_client(
     thread.start()
 
 
+def _create_worker_context(
+    args: argparse.Namespace,
+    config: ServerConfig,
+    lifecycle: LifecycleState,
+    connection_limiter: ConnectionLimiter,
+) -> WorkerContext:
+    return WorkerContext(
+        directory=args.directory,
+        connection_limiter=connection_limiter,
+        rate_limiter=_create_rate_limiter(args),
+        lifecycle=lifecycle,
+        config=config,
+        cors_config=_create_cors_config(args),
+    )
+
+
+def _accept_client(server_socket: socket.socket, lifecycle: LifecycleState):
+    try:
+        return server_socket.accept()
+    except socket.timeout:
+        return None if lifecycle.should_stop() else False
+    except OSError as error:
+        if lifecycle.should_stop():
+            return None
+        ACCEPT_LOGGER.error(
+            "Socket accept failed",
+            extra={"event": "accept_error", "error_type": type(error).__name__},
+        )
+        return False
+
+
+def _reject_if_draining(
+    lifecycle: LifecycleState, client_socket: socket.socket
+) -> bool:
+    if not lifecycle.is_draining():
+        return False
+    send_response(client_socket, draining_response(SECURITY_HEADERS))
+    client_socket.close()
+    return True
+
+
+def _run_accept_loop(
+    server_socket: socket.socket,
+    lifecycle: LifecycleState,
+    connection_limiter: ConnectionLimiter,
+    handler_context: WorkerContext,
+) -> None:
+    while True:
+        accepted = _accept_client(server_socket, lifecycle)
+        if accepted is None:
+            break
+        if accepted is False:
+            continue
+
+        client_socket, client_address = accepted
+        if _reject_if_draining(lifecycle, client_socket):
+            continue
+
+        _handle_accepted_client(
+            client_socket, client_address, connection_limiter, handler_context
+        )
+
+
+def _finish_shutdown(
+    server_socket: socket.socket,
+    config: ServerConfig,
+    lifecycle: LifecycleState,
+) -> None:
+    server_socket.close()
+    ACCEPT_LOGGER.info(
+        "Waiting for active connections to complete",
+        extra={
+            "event": "shutdown_waiting",
+            "grace_seconds": config.shutdown_grace_seconds,
+        },
+    )
+    lifecycle.wait_for_workers(config.shutdown_grace_seconds)
+    ACCEPT_LOGGER.info("Server shutdown complete", extra={"event": "server_stopped"})
+
+
 def run_server(
-    args: argparse.Namespace, config: ServerConfig, lifecycle: ServerLifecycle
+    args: argparse.Namespace, config: ServerConfig, lifecycle: LifecycleState
 ) -> None:
     """Create listening socket and handle client lifecycle."""
 
@@ -125,53 +204,16 @@ def run_server(
         args.max_connections,
         args.max_connections_per_ip,
     )
-    rate_limiter = _create_rate_limiter(args)
-    cors_config = _create_cors_config(args)
-
-    handler_context = WorkerContext(
-        directory=args.directory,
-        connection_limiter=connection_limiter,
-        rate_limiter=rate_limiter,
-        lifecycle=lifecycle,
-        config=config,
-        cors_config=cors_config,
+    handler_context = _create_worker_context(
+        args, config, lifecycle, connection_limiter
     )
 
     try:
-        while True:
-            try:
-                client_socket, client_address = server_socket.accept()
-            except socket.timeout:
-                if lifecycle.should_stop():
-                    break
-                continue
-            except OSError as error:
-                if lifecycle.should_stop():
-                    break
-                ACCEPT_LOGGER.error(
-                    "Socket accept failed",
-                    extra={"event": "accept_error", "error_type": type(error).__name__},
-                )
-                continue
-
-            if lifecycle.is_draining():
-                send_response(client_socket, draining_response(SECURITY_HEADERS))
-                client_socket.close()
-                continue
-
-            _handle_accepted_client(
-                client_socket, client_address, connection_limiter, handler_context
-            )
+        _run_accept_loop(
+            server_socket,
+            lifecycle,
+            connection_limiter,
+            handler_context,
+        )
     finally:
-        server_socket.close()
-        ACCEPT_LOGGER.info(
-            "Waiting for active connections to complete",
-            extra={
-                "event": "shutdown_waiting",
-                "grace_seconds": config.shutdown_grace_seconds,
-            },
-        )
-        lifecycle.wait_for_workers(config.shutdown_grace_seconds)
-        ACCEPT_LOGGER.info(
-            "Server shutdown complete", extra={"event": "server_stopped"}
-        )
+        _finish_shutdown(server_socket, config, lifecycle)

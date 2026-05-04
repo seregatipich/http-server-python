@@ -1,0 +1,43 @@
+[constraints]
+min_quality = 0.72
+min_modularity = 0.37
+min_acyclicity = 1.0
+min_depth = 0.88
+min_equality = 0.59
+min_redundancy = 0.976
+max_cycles = 0
+max_cc = 15
+max_fn_lines = 100
+max_file_lines = 500
+max_upward_violations = 0
+no_god_files = true
+
+[[layers]]
+name = "domain"
+paths = ["server/domain/*"]
+order = 5
+
+[[layers]]
+name = "bootstrap"
+paths = ["server/bootstrap/*", "server/lifecycle/*"]
+order = 4
+
+[[layers]]
+name = "handlers"
+paths = ["server/handlers/*"]
+order = 3
+
+[[layers]]
+name = "pipeline"
+paths = ["server/pipeline/*"]
+order = 2
+
+[[layers]]
+name = "transport"
+paths = ["server/transport/*"]
+order = 1
+
+[[layers]]
+name = "entrypoints"
+paths = ["main.py", "logging_config.py"]
+order = 0

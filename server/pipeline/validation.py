@@ -1,16 +1,13 @@
 """Request validation utilities for HTTP server."""
 
-from server.domain.http_types import HttpRequest
-from server.domain.response_builders import (
+from server.domain import (
+    HttpRequest,
+    RequestEntityTooLarge,
     bad_request_response,
     entity_too_large_response,
     forbidden_response,
     method_not_allowed_response,
 )
-
-
-class RequestEntityTooLarge(Exception):
-    """Raised when a request body exceeds configured limits."""
 
 
 def enforce_allowed_method(

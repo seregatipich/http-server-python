@@ -1,6 +1,6 @@
 """Unit tests covering connection close heuristics."""
 
-from server.domain.http_types import should_close
+from server.domain import should_close
 
 
 def test_should_close_false_by_default() -> None:

@@ -63,6 +63,43 @@ class TokenBucketLimiter:
             self._state[client_ip] = state
         return state
 
+    def _refill(self, state: BucketState, now_ns: int) -> float:
+        tokens = state.tokens
+        elapsed = now_ns - state.last_refill_ns
+        if elapsed <= 0:
+            return tokens
+
+        windows = elapsed // self._window_ns
+        if not windows:
+            return tokens
+
+        refill = windows * self._rate_limit
+        state.last_refill_ns += windows * self._window_ns
+        return min(self._burst_capacity, tokens + refill)
+
+    def _reset_ns(self, state: BucketState, now_ns: int) -> int:
+        elapsed_since_refill = now_ns - state.last_refill_ns
+        return (
+            self._window_ns - (elapsed_since_refill % self._window_ns)
+        ) % self._window_ns
+
+    def _decision(
+        self,
+        allowed: bool,
+        tokens: float,
+        reset_ns: int,
+    ) -> RateLimitDecision:
+        remaining = int(tokens)
+        return RateLimitDecision(
+            allowed=allowed or (not allowed and self._dry_run),
+            limit=self._rate_limit,
+            remaining=remaining if allowed else 0,
+            reset_seconds=reset_ns / 1_000_000_000,
+            headers=self._headers(remaining, reset_ns),
+            dry_run=self._dry_run and not allowed,
+            window_seconds=self._window_ns / 1_000_000_000,
+        )
+
     def consume(self, client_ip: str) -> RateLimitDecision:
         """Consume a token for the given client IP and return the decision."""
 
@@ -72,35 +109,12 @@ class TokenBucketLimiter:
         now_ns = self._now()
         with self._lock:
             state = self._get_state(client_ip)
-            tokens = state.tokens
-            last_refill = state.last_refill_ns
-            elapsed = now_ns - last_refill
-            if elapsed > 0:
-                windows = elapsed // self._window_ns
-                if windows:
-                    refill = windows * self._rate_limit
-                    tokens = min(self._burst_capacity, tokens + refill)
-                    last_refill += windows * self._window_ns
-                    state.last_refill_ns = last_refill
+            tokens = self._refill(state, now_ns)
             allowed = tokens >= 1
             if allowed:
                 tokens -= 1
             state.tokens = tokens
-            elapsed_since_refill = now_ns - state.last_refill_ns
-            reset_ns = (
-                self._window_ns - (elapsed_since_refill % self._window_ns)
-            ) % self._window_ns
-            remaining = int(tokens)
-            headers = self._headers(remaining, reset_ns)
-            return RateLimitDecision(
-                allowed=allowed or (not allowed and self._dry_run),
-                limit=self._rate_limit,
-                remaining=remaining if allowed else 0,
-                reset_seconds=reset_ns / 1_000_000_000,
-                headers=headers,
-                dry_run=self._dry_run and not allowed,
-                window_seconds=self._window_ns / 1_000_000_000,
-            )
+            return self._decision(allowed, tokens, self._reset_ns(state, now_ns))
 
     def _headers(self, remaining: int, reset_ns: int) -> dict[str, str]:
         """Build RateLimit headers for the current bucket state."""

@@ -4,11 +4,7 @@ import logging
 import threading
 import time
 
-from server.domain.correlation_id import CorrelationLoggerAdapter
-
-LIFECYCLE_LOGGER = CorrelationLoggerAdapter(
-    logging.getLogger("http_server.lifecycle"), {}
-)
+LIFECYCLE_LOGGER = logging.getLogger("http_server.lifecycle")
 
 
 class ServerLifecycle:
@@ -32,7 +28,7 @@ class ServerLifecycle:
         """Register a worker thread for tracking."""
         with self._lock:
             self._workers.add(thread)
-            if LIFECYCLE_LOGGER.logger.isEnabledFor(logging.DEBUG):
+            if LIFECYCLE_LOGGER.isEnabledFor(logging.DEBUG):
                 LIFECYCLE_LOGGER.debug(
                     "Worker thread registered",
                     extra={
@@ -45,7 +41,7 @@ class ServerLifecycle:
         """Remove a worker thread from tracking."""
         with self._lock:
             self._workers.discard(thread)
-            if LIFECYCLE_LOGGER.logger.isEnabledFor(logging.DEBUG):
+            if LIFECYCLE_LOGGER.isEnabledFor(logging.DEBUG):
                 LIFECYCLE_LOGGER.debug(
                     "Worker thread unregistered",
                     extra={
@@ -72,27 +68,42 @@ class ServerLifecycle:
             "Graceful shutdown initiated", extra={"event": "draining_started"}
         )
 
+    def _active_workers(self) -> list[threading.Thread]:
+        with self._lock:
+            self._workers = {w for w in self._workers if w.is_alive()}
+            return list(self._workers)
+
+    def _log_grace_expired(
+        self, active_workers: list[threading.Thread], timeout: float
+    ) -> None:
+        LIFECYCLE_LOGGER.warning(
+            "Shutdown grace period expired",
+            extra={
+                "event": "shutdown_grace_expired",
+                "remaining_workers": len(active_workers),
+                "timeout": timeout,
+            },
+        )
+
+    @staticmethod
+    def _join_workers_until(
+        active_workers: list[threading.Thread], deadline: float, remaining: float
+    ) -> None:
+        for worker in active_workers:
+            worker.join(timeout=min(0.1, remaining))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+
     def wait_for_workers(self, timeout: float) -> bool:
         """Wait for all worker threads to complete within the timeout."""
         deadline = time.monotonic() + timeout
         while True:
-            with self._lock:
-                self._workers = {w for w in self._workers if w.is_alive()}
-                active_workers = list(self._workers)
+            active_workers = self._active_workers()
             if not active_workers:
                 return True
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                LIFECYCLE_LOGGER.warning(
-                    "Shutdown grace period expired",
-                    extra={
-                        "event": "shutdown_grace_expired",
-                        "remaining_workers": len(active_workers),
-                        "timeout": timeout,
-                    },
-                )
+                self._log_grace_expired(active_workers, timeout)
                 return False
-            for worker in active_workers:
-                worker.join(timeout=min(0.1, remaining))
-                if time.monotonic() >= deadline:
-                    break
+            self._join_workers_until(active_workers, deadline, remaining)

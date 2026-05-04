@@ -3,8 +3,8 @@
 import gzip
 from pathlib import Path
 
-from server.domain.http_types import HttpRequest
-from server.pipeline.router import route_request
+from server.domain import HttpRequest
+from server.pipeline import route_request
 
 
 def make_request(
@@ -73,3 +73,14 @@ def test_file_post_persists_payload(tmp_path: Path) -> None:
     assert response.status_line == "HTTP/1.1 201 Created"
     stored = (tmp_path / "uploaded.txt").read_bytes()
     assert stored == body
+
+
+def test_file_regular_options_returns_method_not_allowed(tmp_path: Path) -> None:
+    """Non-preflight OPTIONS requests to /files should fail cleanly."""
+
+    response = route_request(
+        make_request("/files/item.txt", method="OPTIONS"),
+        str(tmp_path),
+    )
+    assert response.status_line == "HTTP/1.1 405 Method Not Allowed"
+    assert response.headers["Allow"] == "GET, POST"

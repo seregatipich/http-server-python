@@ -1,7 +1,7 @@
 """Unit tests covering HTTP request parsing behavior."""
 
-from server.domain.http_types import HttpRequest
-from server.pipeline.io import parse_headers, receive_request
+from server.domain import HttpRequest
+from server.pipeline import parse_headers, receive_request
 
 
 class FakeSocket:
@@ -32,13 +32,16 @@ def test_parse_headers_normalizes_keys_and_skips_invalid_lines():
         [
             "Content-Length: 10",
             "User-Agent: ExampleClient",
+            "Host:localhost",
             "x-custom: value",
+            "   : missing-name",
             "invalid-line",
         ]
     )
     assert headers == {
         "content-length": "10",
         "user-agent": "ExampleClient",
+        "host": "localhost",
         "x-custom": "value",
     }
 

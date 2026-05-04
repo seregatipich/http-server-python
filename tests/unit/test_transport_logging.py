@@ -6,12 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from server.bootstrap.config import ServerConfig
-from server.lifecycle.state import ServerLifecycle
-from server.pipeline.validation import RequestEntityTooLarge
-from server.transport.accept_loop import run_server
-from server.transport.context import WorkerContext
-from server.transport.worker import handle_client
+from server.bootstrap import ServerConfig
+from server.domain import RequestEntityTooLarge
+from server.lifecycle import ServerLifecycle
+from server.transport import WorkerContext, handle_client, run_server
 
 
 @pytest.fixture(name="mock_socket")

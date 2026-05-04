@@ -6,9 +6,7 @@ import socket
 import ssl
 import sys
 
-from server.domain.correlation_id import CorrelationLoggerAdapter
-
-SOCKET_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.socket"), {})
+SOCKET_LOGGER = logging.getLogger("http_server.socket")
 
 
 def create_server_socket(args: argparse.Namespace) -> socket.socket:

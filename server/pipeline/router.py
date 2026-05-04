@@ -1,95 +1,136 @@
 """Request routing logic."""
 
+from dataclasses import dataclass
 import logging
 from typing import Optional
 
-from server.bootstrap.config import FILES_ENDPOINT_PREFIX, SECURITY_HEADERS
-from server.domain.correlation_id import CorrelationLoggerAdapter
-from server.domain.http_types import HttpRequest, HttpResponse
-from server.domain.response_builders import forbidden_response, not_found_response
-from server.handlers.file_handler import file_response, index_response
-from server.handlers.system_handlers import (
+from server.domain import (
+    CorrelationLoggerAdapter,
+    CorsConfig,
+    FILES_ENDPOINT_PREFIX,
+    SECURITY_HEADERS,
+    HttpRequest,
+    HttpResponse,
+    LifecycleState,
+    forbidden_response,
+    not_found_response,
+)
+from server.handlers import (
+    file_response,
     handle_echo,
     handle_healthz,
     handle_user_agent,
+    index_response,
 )
-from server.lifecycle.state import ServerLifecycle
-from server.security.cors import CorsConfig
 
 ROUTER_LOGGER = CorrelationLoggerAdapter(
     logging.getLogger("http_server.pipeline.router"), {}
 )
 
 
+@dataclass(frozen=True)
+class RouteContext:
+    """Request-scoped values shared by route handlers."""
+
+    request: HttpRequest
+    directory: str
+    lifecycle: Optional[LifecycleState]
+    cors_config: Optional[CorsConfig]
+
+
+def _log_route_match(route: str) -> None:
+    if ROUTER_LOGGER.logger.isEnabledFor(logging.DEBUG):
+        ROUTER_LOGGER.debug(
+            "Route matched", extra={"event": "route_matched", "route": route}
+        )
+
+
+def _route_healthz(context: RouteContext) -> Optional[HttpResponse]:
+    if context.request.path != "/healthz":
+        return None
+    _log_route_match("/healthz")
+    return handle_healthz(context.lifecycle, SECURITY_HEADERS)
+
+
+def _route_index(context: RouteContext) -> Optional[HttpResponse]:
+    if context.request.path != "/":
+        return None
+    _log_route_match("/")
+    return index_response(
+        context.request,
+        context.directory,
+        context.cors_config,
+        SECURITY_HEADERS,
+    )
+
+
+def _route_echo(context: RouteContext) -> Optional[HttpResponse]:
+    if not context.request.path.startswith("/echo/"):
+        return None
+    _log_route_match("/echo/*")
+    return handle_echo(context.request, context.cors_config, SECURITY_HEADERS)
+
+
+def _route_user_agent(context: RouteContext) -> Optional[HttpResponse]:
+    if context.request.path != "/user-agent":
+        return None
+    _log_route_match("/user-agent")
+    return handle_user_agent(context.request, context.cors_config, SECURITY_HEADERS)
+
+
+def _is_invalid_file_route(remainder: str) -> bool:
+    return (
+        not remainder
+        or remainder.startswith("../")
+        or "/../" in remainder
+        or remainder.startswith("..")
+    )
+
+
+def _route_file(context: RouteContext) -> Optional[HttpResponse]:
+    request = context.request
+    if not request.path.startswith(FILES_ENDPOINT_PREFIX):
+        return None
+
+    remainder = request.path[len(FILES_ENDPOINT_PREFIX) :]
+    if _is_invalid_file_route(remainder):
+        ROUTER_LOGGER.warning(
+            "Invalid file path in request",
+            extra={"event": "route_invalid", "route": request.path},
+        )
+        return forbidden_response(request, context.cors_config, SECURITY_HEADERS)
+
+    _log_route_match("/files/*")
+    return file_response(
+        request,
+        context.directory,
+        context.cors_config,
+        SECURITY_HEADERS,
+        FILES_ENDPOINT_PREFIX,
+    )
+
+
+ROUTE_HANDLERS = (
+    _route_healthz,
+    _route_index,
+    _route_echo,
+    _route_user_agent,
+    _route_file,
+)
+
+
 def route_request(
     request: HttpRequest,
     directory: str,
-    lifecycle: Optional[ServerLifecycle] = None,
+    lifecycle: Optional[LifecycleState] = None,
     cors_config: Optional[CorsConfig] = None,
 ) -> HttpResponse:
     """Route the request to the appropriate handler and return a response."""
-    if request.path == "/healthz":
-        if ROUTER_LOGGER.logger.isEnabledFor(logging.DEBUG):
-            ROUTER_LOGGER.debug(
-                "Route matched", extra={"event": "route_matched", "route": "/healthz"}
-            )
-        return handle_healthz(lifecycle)
-
-    if request.path == "/":
-        if ROUTER_LOGGER.logger.isEnabledFor(logging.DEBUG):
-            ROUTER_LOGGER.debug(
-                "Route matched", extra={"event": "route_matched", "route": "/"}
-            )
-        return index_response(
-            request,
-            directory,
-            cors_config,
-            SECURITY_HEADERS,
-        )
-
-    if request.path.startswith("/echo/"):
-        if ROUTER_LOGGER.logger.isEnabledFor(logging.DEBUG):
-            ROUTER_LOGGER.debug(
-                "Route matched", extra={"event": "route_matched", "route": "/echo/*"}
-            )
-        return handle_echo(request, cors_config)
-
-    if request.path == "/user-agent":
-        if ROUTER_LOGGER.logger.isEnabledFor(logging.DEBUG):
-            ROUTER_LOGGER.debug(
-                "Route matched",
-                extra={"event": "route_matched", "route": "/user-agent"},
-            )
-        return handle_user_agent(request, cors_config)
-
-    if request.path.startswith(FILES_ENDPOINT_PREFIX):
-        remainder = request.path[len(FILES_ENDPOINT_PREFIX) :]
-        is_invalid = (
-            not remainder
-            or remainder.startswith("../")
-            or "/../" in remainder
-            or remainder.startswith("..")
-        )
-        if is_invalid:
-            ROUTER_LOGGER.warning(
-                "Invalid file path in request",
-                extra={"event": "route_invalid", "route": request.path},
-            )
-        elif ROUTER_LOGGER.logger.isEnabledFor(logging.DEBUG):
-            ROUTER_LOGGER.debug(
-                "Route matched", extra={"event": "route_matched", "route": "/files/*"}
-            )
-        return (
-            forbidden_response(request, cors_config, SECURITY_HEADERS)
-            if is_invalid
-            else file_response(
-                request,
-                directory,
-                cors_config,
-                SECURITY_HEADERS,
-                FILES_ENDPOINT_PREFIX,
-            )
-        )
+    context = RouteContext(request, directory, lifecycle, cors_config)
+    for handler in ROUTE_HANDLERS:
+        response = handler(context)
+        if response is not None:
+            return response
 
     ROUTER_LOGGER.info(
         "No matching route found",

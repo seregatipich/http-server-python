@@ -4,13 +4,11 @@ import logging
 import signal
 import sys
 
-from server.bootstrap.config import ServerConfig, parse_cli_args
-from server.bootstrap.logging_setup import configure_logging
-from server.domain.correlation_id import CorrelationLoggerAdapter
-from server.lifecycle.state import ServerLifecycle
-from server.transport.accept_loop import run_server
+from server.bootstrap import ServerConfig, configure_logging, parse_cli_args
+from server.lifecycle import ServerLifecycle
+from server.transport import run_server
 
-MAIN_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.main"), {})
+MAIN_LOGGER = logging.getLogger("http_server.main")
 
 
 def main() -> None:

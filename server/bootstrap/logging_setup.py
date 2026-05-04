@@ -6,9 +6,7 @@ import re
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional, Union
-
-from server.domain.correlation_id import CorrelationLoggerAdapter
+from typing import Optional
 
 LOGGER_NAME = "http_server"
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(correlation_id)s] %(name)s :: %(message)s"
@@ -135,7 +133,7 @@ def _build_handler(
 
 def configure_logging(
     level: str = "INFO", destination: Optional[str] = None, use_json: bool = True
-) -> Union[logging.Logger, CorrelationLoggerAdapter]:
+) -> logging.Logger:
     """Configure and return the project logger with the requested handler."""
     logger = logging.getLogger(LOGGER_NAME)
     numeric_level = _resolve_level(level)
@@ -149,8 +147,7 @@ def configure_logging(
     handler = _build_handler(destination, numeric_level, use_json)
     logger.addHandler(handler)
 
-    adapter = CorrelationLoggerAdapter(logger, {})
-    adapter.info(
+    logger.info(
         "Logging configured",
         extra={
             "event": "logging_configured",
@@ -159,4 +156,4 @@ def configure_logging(
             "use_json": use_json,
         },
     )
-    return adapter
+    return logger

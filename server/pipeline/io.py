@@ -5,19 +5,18 @@ import socket
 import urllib.parse
 from typing import Optional, Tuple
 
-from server.bootstrap.config import (
+from server.domain import (
+    CorrelationLoggerAdapter,
+    DEFAULT_MAX_BODY_BYTES,
     FILES_ENDPOINT_PREFIX,
     HEADER_DELIMITER,
-    MAX_BODY_BYTES,
-)
-from server.domain.correlation_id import (
-    CorrelationLoggerAdapter,
+    ForbiddenPath,
+    HttpRequest,
+    HttpResponse,
+    RequestEntityTooLarge,
     get_correlation_id,
     set_correlation_id,
 )
-from server.domain.http_types import HttpRequest, HttpResponse
-from server.domain.sandbox import ForbiddenPath
-from server.pipeline.validation import RequestEntityTooLarge
 
 IO_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.io"), {})
 
@@ -26,9 +25,12 @@ def parse_headers(lines: list[str]) -> dict[str, str]:
     """Convert raw header lines into a lowercase-keyed dictionary."""
     parsed = {}
     for line in lines:
-        if ": " in line:
-            name, value = line.split(": ", 1)
-            parsed[name.lower()] = value
+        if ":" not in line:
+            continue
+        name, value = line.split(":", 1)
+        normalized_name = name.strip().lower()
+        if normalized_name:
+            parsed[normalized_name] = value.lstrip(" \t")
     return parsed
 
 
@@ -49,33 +51,71 @@ def parse_request_line(request_line: str) -> Tuple[str, str]:
     return method, path
 
 
-def determine_content_length(method: str, headers: dict[str, str]) -> int:
-    """Validate and return the declared Content-Length for the request."""
-    header_value = headers.get("content-length")
-    if method == "POST" and header_value is None:
-        raise ValueError("Missing Content-Length")
-    if header_value is None:
-        return 0
+def _parse_content_length(header_value: str) -> int:
     try:
         content_length = int(header_value)
     except ValueError as exc:
         raise ValueError("Invalid Content-Length") from exc
     if content_length < 0:
         raise ValueError("Negative Content-Length")
-    if content_length > MAX_BODY_BYTES:
-        raise RequestEntityTooLarge
     return content_length
 
 
-def receive_request(
-    client_socket: socket.socket, buffer: bytes
-) -> Tuple[Optional[HttpRequest], bytes]:
-    """Read bytes from the socket until a complete request is available."""
+def _enforce_body_size(content_length: int, max_body_bytes: int) -> None:
+    if content_length > max_body_bytes:
+        raise RequestEntityTooLarge
+
+
+def determine_content_length(
+    method: str,
+    headers: dict[str, str],
+    max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
+) -> int:
+    """Validate and return the declared Content-Length for the request."""
+    header_value = headers.get("content-length")
+    if method == "POST" and header_value is None:
+        raise ValueError("Missing Content-Length")
+    if header_value is None:
+        return 0
+    content_length = _parse_content_length(header_value)
+    _enforce_body_size(content_length, max_body_bytes)
+    return content_length
+
+
+def _read_until_headers(client_socket: socket.socket, buffer: bytes) -> bytes:
     while HEADER_DELIMITER not in buffer:
         chunk = client_socket.recv(4096)
         if not chunk:
-            return None, b""
+            return b""
         buffer += chunk
+    return buffer
+
+
+def _read_body(
+    client_socket: socket.socket,
+    remainder: bytes,
+    content_length: int,
+    max_body_bytes: int,
+) -> Tuple[Optional[bytes], bytes]:
+    while len(remainder) < content_length:
+        chunk = client_socket.recv(4096)
+        if not chunk:
+            return None, b""
+        remainder += chunk
+        if len(remainder) > max_body_bytes:
+            raise RequestEntityTooLarge
+    return remainder[:content_length], remainder[content_length:]
+
+
+def receive_request(
+    client_socket: socket.socket,
+    buffer: bytes,
+    max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
+) -> Tuple[Optional[HttpRequest], bytes]:
+    """Read bytes from the socket until a complete request is available."""
+    buffer = _read_until_headers(client_socket, buffer)
+    if not buffer:
+        return None, b""
 
     header_block, remainder = buffer.split(HEADER_DELIMITER, 1)
     header_lines = header_block.decode().split("\r\n")
@@ -86,49 +126,57 @@ def receive_request(
     if incoming_correlation_id:
         set_correlation_id(incoming_correlation_id)
 
-    content_length = determine_content_length(method, headers)
-
-    while len(remainder) < content_length:
-        chunk = client_socket.recv(4096)
-        if not chunk:
-            return None, b""
-        remainder += chunk
-        if len(remainder) > MAX_BODY_BYTES:
-            raise RequestEntityTooLarge
-
-    body = remainder[:content_length]
-    leftover = remainder[content_length:]
+    content_length = determine_content_length(method, headers, max_body_bytes)
+    body, leftover = _read_body(
+        client_socket, remainder, content_length, max_body_bytes
+    )
+    if body is None:
+        return None, b""
     IO_LOGGER.debug("Parsed request", extra={"method": method, "path": path})
     return HttpRequest(method, path, headers, body), leftover
 
 
-def send_response(client_socket: socket.socket, response: HttpResponse) -> None:
-    """Serialize and send the HTTP response over the socket."""
+def _response_headers(response: HttpResponse) -> dict[str, str]:
     headers = dict(response.headers)
-
     correlation_id = get_correlation_id()
     if correlation_id:
         headers["X-Request-ID"] = correlation_id
-
     if response.use_chunked:
         headers["Transfer-Encoding"] = "chunked"
     else:
         headers["Content-Length"] = str(len(response.body))
     if response.close_connection:
         headers["Connection"] = "close"
-    header_lines = [response.status_line]
+    return headers
+
+
+def _header_block(status_line: str, headers: dict[str, str]) -> bytes:
+    header_lines = [status_line]
     header_lines.extend(f"{name}: {value}" for name, value in headers.items())
-    header_block = "\r\n".join(header_lines).encode() + b"\r\n\r\n"
+    return "\r\n".join(header_lines).encode() + b"\r\n\r\n"
+
+
+def _send_chunked_response(
+    client_socket: socket.socket,
+    header_block: bytes,
+    response: HttpResponse,
+) -> None:
+    client_socket.sendall(header_block)
+    for chunk in response.body_iter or ():
+        if not chunk:
+            continue
+        size_line = f"{len(chunk):X}\r\n".encode()
+        client_socket.sendall(size_line)
+        client_socket.sendall(chunk)
+        client_socket.sendall(b"\r\n")
+    client_socket.sendall(b"0\r\n\r\n")
+
+
+def send_response(client_socket: socket.socket, response: HttpResponse) -> None:
+    """Serialize and send the HTTP response over the socket."""
+    header_block = _header_block(response.status_line, _response_headers(response))
     if response.use_chunked and response.body_iter is not None:
-        client_socket.sendall(header_block)
-        for chunk in response.body_iter:
-            if not chunk:
-                continue
-            size_line = f"{len(chunk):X}\r\n".encode()
-            client_socket.sendall(size_line)
-            client_socket.sendall(chunk)
-            client_socket.sendall(b"\r\n")
-        client_socket.sendall(b"0\r\n\r\n")
+        _send_chunked_response(client_socket, header_block, response)
     else:
         client_socket.sendall(header_block + response.body)
     IO_LOGGER.debug(

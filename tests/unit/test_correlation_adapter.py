@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from server.domain.correlation_id import (
+from server.domain import (
     CorrelationLoggerAdapter,
     clear_correlation_id,
     set_correlation_id,

@@ -2,18 +2,20 @@
 
 import pytest
 
-from server.bootstrap.config import ALLOWED_METHODS, MAX_BODY_BYTES
-from server.domain.http_types import HttpRequest
-from server.domain.response_builders import entity_too_large_response
-from server.domain.sandbox import ForbiddenPath, resolve_sandbox_path
-from server.pipeline.validation import validate_request
-from server.security.cors import (
+from server.bootstrap import MAX_BODY_BYTES
+from server.domain import (
+    ALLOWED_METHODS,
     CorsConfig,
+    ForbiddenPath,
+    HttpRequest,
     apply_cors_headers,
     determine_allowed_origin,
+    entity_too_large_response,
     is_preflight_request,
     preflight_response,
+    resolve_sandbox_path,
 )
+from server.pipeline import validate_request
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
@@ -37,6 +39,20 @@ def validate_test_request(request: HttpRequest):
     return validate_request(
         request, ALLOWED_METHODS, MAX_BODY_BYTES, None, SECURITY_HEADERS
     )
+
+
+def make_cors_config(**overrides) -> CorsConfig:
+    """Construct a CORS config with common test defaults."""
+    values = {
+        "allowed_origins": ["*"],
+        "allowed_methods": ["GET", "POST"],
+        "allowed_headers": ["Content-Type"],
+        "expose_headers": ["X-Request-ID"],
+        "allow_credentials": False,
+        "max_age": 86400,
+    }
+    values.update(overrides)
+    return CorsConfig(**values)
 
 
 def test_validate_request_allows_whitelisted_methods():
@@ -157,14 +173,7 @@ def test_is_preflight_request_rejects_non_options():
 
 def test_apply_cors_headers_with_wildcard_origin():
     """Apply wildcard CORS headers when configured."""
-    cors_config = CorsConfig(
-        allowed_origins=["*"],
-        allowed_methods=["GET", "POST"],
-        allowed_headers=["Content-Type"],
-        expose_headers=["X-Request-ID"],
-        allow_credentials=False,
-        max_age=86400,
-    )
+    cors_config = make_cors_config()
     request = make_request("/", headers={"origin": "https://example.com"})
     headers = {}
     apply_cors_headers(headers, request, cors_config)
@@ -176,13 +185,8 @@ def test_apply_cors_headers_with_wildcard_origin():
 
 def test_apply_cors_headers_with_specific_origin():
     """Apply specific origin CORS headers when origin is in allowlist."""
-    cors_config = CorsConfig(
-        allowed_origins=["https://example.com", "https://app.example.com"],
-        allowed_methods=["GET", "POST"],
-        allowed_headers=["Content-Type"],
-        expose_headers=["X-Request-ID"],
-        allow_credentials=False,
-        max_age=86400,
+    cors_config = make_cors_config(
+        allowed_origins=["https://example.com", "https://app.example.com"]
     )
     request = make_request("/", headers={"origin": "https://example.com"})
     headers = {}
@@ -194,14 +198,7 @@ def test_apply_cors_headers_with_specific_origin():
 
 def test_apply_cors_headers_rejects_unlisted_origin():
     """Do not apply CORS headers when origin is not in allowlist."""
-    cors_config = CorsConfig(
-        allowed_origins=["https://example.com"],
-        allowed_methods=["GET", "POST"],
-        allowed_headers=["Content-Type"],
-        expose_headers=["X-Request-ID"],
-        allow_credentials=False,
-        max_age=86400,
-    )
+    cors_config = make_cors_config(allowed_origins=["https://example.com"])
     request = make_request("/", headers={"origin": "https://evil.com"})
     headers = {}
     apply_cors_headers(headers, request, cors_config)
@@ -210,13 +207,9 @@ def test_apply_cors_headers_rejects_unlisted_origin():
 
 def test_apply_cors_headers_with_credentials():
     """Apply credentials header when configured."""
-    cors_config = CorsConfig(
+    cors_config = make_cors_config(
         allowed_origins=["https://example.com"],
-        allowed_methods=["GET", "POST"],
-        allowed_headers=["Content-Type"],
-        expose_headers=["X-Request-ID"],
         allow_credentials=True,
-        max_age=86400,
     )
     request = make_request("/", headers={"origin": "https://example.com"})
     headers = {}
@@ -227,14 +220,7 @@ def test_apply_cors_headers_with_credentials():
 
 def test_apply_cors_headers_credentials_with_wildcard():
     """Use specific origin instead of wildcard when credentials enabled."""
-    cors_config = CorsConfig(
-        allowed_origins=["*"],
-        allowed_methods=["GET", "POST"],
-        allowed_headers=["Content-Type"],
-        expose_headers=["X-Request-ID"],
-        allow_credentials=True,
-        max_age=86400,
-    )
+    cors_config = make_cors_config(allow_credentials=True)
     request = make_request("/", headers={"origin": "https://example.com"})
     headers = {}
     apply_cors_headers(headers, request, cors_config)
@@ -245,14 +231,7 @@ def test_apply_cors_headers_credentials_with_wildcard():
 
 def test_apply_cors_headers_without_origin():
     """Do not apply CORS headers when no Origin header present."""
-    cors_config = CorsConfig(
-        allowed_origins=["*"],
-        allowed_methods=["GET", "POST"],
-        allowed_headers=["Content-Type"],
-        expose_headers=["X-Request-ID"],
-        allow_credentials=False,
-        max_age=86400,
-    )
+    cors_config = make_cors_config()
     request = make_request("/", headers={})
     headers = {}
     apply_cors_headers(headers, request, cors_config)
@@ -261,13 +240,10 @@ def test_apply_cors_headers_without_origin():
 
 def test_preflight_response_with_allowed_origin():
     """Return 204 preflight response with CORS headers."""
-    cors_config = CorsConfig(
+    cors_config = make_cors_config(
         allowed_origins=["https://example.com"],
         allowed_methods=["GET", "POST", "OPTIONS"],
         allowed_headers=["Content-Type", "Authorization"],
-        expose_headers=["X-Request-ID"],
-        allow_credentials=False,
-        max_age=86400,
     )
     request = make_request(
         "/",
@@ -290,13 +266,8 @@ def test_preflight_response_with_allowed_origin():
 
 def test_preflight_response_with_requested_headers():
     """Echo requested headers when they are in the allowlist."""
-    cors_config = CorsConfig(
-        allowed_origins=["*"],
-        allowed_methods=["GET", "POST"],
-        allowed_headers=["Content-Type", "Authorization", "X-Custom"],
-        expose_headers=["X-Request-ID"],
-        allow_credentials=False,
-        max_age=86400,
+    cors_config = make_cors_config(
+        allowed_headers=["Content-Type", "Authorization", "X-Custom"]
     )
     request = make_request(
         "/",
@@ -316,14 +287,7 @@ def test_preflight_response_with_requested_headers():
 
 def test_preflight_response_with_forbidden_headers():
     """Return allowed headers when requested headers not in allowlist."""
-    cors_config = CorsConfig(
-        allowed_origins=["*"],
-        allowed_methods=["GET", "POST"],
-        allowed_headers=["Content-Type"],
-        expose_headers=["X-Request-ID"],
-        allow_credentials=False,
-        max_age=86400,
-    )
+    cors_config = make_cors_config()
     request = make_request(
         "/",
         method="OPTIONS",
@@ -339,13 +303,12 @@ def test_preflight_response_with_forbidden_headers():
 
 def test_determine_allowed_origin_mixed_policies():
     """Select specific origin from mixed allowlist (wildcard + explicit)."""
-    cors_config = CorsConfig(
+    cors_config = make_cors_config(
         allowed_origins=["*", "https://specific.com"],
         allowed_methods=["GET"],
         allowed_headers=[],
         expose_headers=[],
         allow_credentials=True,
-        max_age=86400,
     )
     assert (
         determine_allowed_origin("https://specific.com", cors_config)
@@ -359,13 +322,10 @@ def test_determine_allowed_origin_mixed_policies():
 
 def test_validate_request_oversized_post_with_origin():
     """Ensure 413 response includes CORS headers when Origin is present."""
-    cors_config = CorsConfig(
-        allowed_origins=["*"],
+    cors_config = make_cors_config(
         allowed_methods=["POST"],
         allowed_headers=[],
         expose_headers=[],
-        allow_credentials=False,
-        max_age=86400,
     )
     payload = b"a" * (MAX_BODY_BYTES + 1)
     request = make_request(

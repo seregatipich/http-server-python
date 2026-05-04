@@ -7,26 +7,33 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-from server.bootstrap.config import ALLOWED_METHODS, MAX_BODY_BYTES, SECURITY_HEADERS
-from server.domain.correlation_id import (
+from server.domain import (
+    ALLOWED_METHODS,
     CorrelationLoggerAdapter,
-    clear_correlation_id,
-    generate_correlation_id,
-    set_correlation_id,
-)
-from server.domain.http_types import HttpRequest
-from server.domain.response_builders import (
+    CorsConfig,
+    DEFAULT_MAX_BODY_BYTES,
+    ForbiddenPath,
+    HttpRequest,
+    RequestEntityTooLarge,
+    SECURITY_HEADERS,
     bad_request_response,
+    clear_correlation_id,
     draining_response,
     entity_too_large_response,
     forbidden_response,
+    format_client_address,
+    generate_correlation_id,
+    is_preflight_request,
+    preflight_response,
+    set_correlation_id,
 )
-from server.domain.sandbox import ForbiddenPath
-from server.pipeline.io import receive_request, send_response
-from server.pipeline.rate_limiting import apply_rate_limit
-from server.pipeline.router import route_request
-from server.pipeline.validation import RequestEntityTooLarge, validate_request
-from server.security.cors import CorsConfig, is_preflight_request, preflight_response
+from server.pipeline import (
+    apply_rate_limit,
+    receive_request,
+    route_request,
+    send_response,
+    validate_request,
+)
 from server.transport.context import WorkerContext
 
 WORKER_LOGGER = CorrelationLoggerAdapter(
@@ -48,25 +55,26 @@ def _read_request_with_validation(
     client_socket: socket.socket,
     buffer: bytes,
     client_address: tuple[str, int],
+    max_body_bytes: int,
 ) -> tuple[Optional[HttpRequest], bytes, bool]:
     """Read a request from the socket while enforcing size and path limits."""
 
     try:
-        request, buffer = receive_request(client_socket, buffer)
+        request, buffer = receive_request(client_socket, buffer, max_body_bytes)
     except RequestEntityTooLarge:
-        client_addr_str = f"{client_address[0]}:{client_address[1]}"
+        client_addr_str = format_client_address(client_address)
         WORKER_LOGGER.warning(
             "Request body size exceeded limit",
             extra={
                 "event": "body_size_exceeded",
                 "client": client_addr_str,
-                "limit": MAX_BODY_BYTES,
+                "limit": max_body_bytes,
             },
         )
         send_response(client_socket, entity_too_large_response(SECURITY_HEADERS))
         return None, b"", True
     except ForbiddenPath:
-        client_addr_str = f"{client_address[0]}:{client_address[1]}"
+        client_addr_str = format_client_address(client_address)
         WORKER_LOGGER.warning(
             "Forbidden path access attempt",
             extra={"event": "forbidden_path", "client": client_addr_str},
@@ -74,7 +82,7 @@ def _read_request_with_validation(
         send_response(client_socket, forbidden_response(None, None, SECURITY_HEADERS))
         return None, b"", True
     except ValueError:
-        client_addr_str = f"{client_address[0]}:{client_address[1]}"
+        client_addr_str = format_client_address(client_address)
         WORKER_LOGGER.warning(
             "Malformed request received",
             extra={"event": "malformed_request", "client": client_addr_str},
@@ -83,7 +91,7 @@ def _read_request_with_validation(
         return None, b"", True
 
     if request is None:
-        client_addr_str = f"{client_address[0]}:{client_address[1]}"
+        client_addr_str = format_client_address(client_address)
         if WORKER_LOGGER.logger.isEnabledFor(logging.DEBUG):
             WORKER_LOGGER.debug(
                 "Client disconnected during request",
@@ -97,9 +105,10 @@ def _handle_validation_response(
     request: HttpRequest,
     client_socket: socket.socket,
     cors_config: Optional[CorsConfig],
+    max_body_bytes: int,
 ) -> tuple[bool, bool]:
     validation_response = validate_request(
-        request, ALLOWED_METHODS, MAX_BODY_BYTES, cors_config, SECURITY_HEADERS
+        request, ALLOWED_METHODS, max_body_bytes, cors_config, SECURITY_HEADERS
     )
     if validation_response is None:
         return False, False
@@ -113,6 +122,7 @@ def _process_request(
     client_socket: socket.socket,
     client_address: tuple[str, int],
     client_ip: str,
+    max_body_bytes: int,
 ) -> bool:
     if is_preflight_request(request):
         response = preflight_response(request, context.cors_config, SECURITY_HEADERS)
@@ -130,7 +140,7 @@ def _process_request(
         return should_close
 
     handled, validation_requires_close = _handle_validation_response(
-        request, client_socket, context.cors_config
+        request, client_socket, context.cors_config, max_body_bytes
     )
     if handled:
         return validation_requires_close
@@ -155,6 +165,12 @@ def _prepare_worker(
     if context.config is not None:
         client_socket.settimeout(context.config.socket_timeout)
     return lifecycle
+
+
+def _max_body_bytes(context: WorkerContext) -> int:
+    config = getattr(context, "config", None)
+    limit = getattr(config, "max_body_bytes", DEFAULT_MAX_BODY_BYTES)
+    return limit if isinstance(limit, int) else DEFAULT_MAX_BODY_BYTES
 
 
 def _drain_if_requested(lifecycle, client_socket: socket.socket) -> bool:
@@ -195,26 +211,21 @@ def _cleanup_worker(
     clear_correlation_id()
 
 
-def handle_client(
+def _process_client_requests(
     client_socket: socket.socket,
     client_address: tuple[str, int],
     context: WorkerContext,
+    lifecycle,
+    client_ip: str,
+    client_addr_str: str,
+    max_body_bytes: int,
 ) -> None:
-    """Process requests on a client socket until the connection is closed."""
     buffer = b""
-    client_ip = client_address[0]
-    current_thread = threading.current_thread()
-    lifecycle = _prepare_worker(context, client_socket, current_thread)
-    client_addr_str = f"{client_address[0]}:{client_address[1]}"
-    resources = _WorkerResources(
-        current_thread, client_socket, client_ip, client_addr_str
-    )
+    while True:
+        correlation_id = generate_correlation_id()
+        set_correlation_id(correlation_id)
 
-    try:
-        while True:
-            correlation_id = generate_correlation_id()
-            set_correlation_id(correlation_id)
-
+        try:
             WORKER_LOGGER.debug(
                 "Request processing started",
                 extra={"event": "request_started", "client": client_addr_str},
@@ -227,13 +238,12 @@ def handle_client(
                 client_socket,
                 buffer,
                 client_address,
+                max_body_bytes,
             )
             if should_terminate:
-                clear_correlation_id()
                 break
 
             if request is None:
-                clear_correlation_id()
                 continue
 
             WORKER_LOGGER.debug(
@@ -251,6 +261,7 @@ def handle_client(
                 client_socket,
                 client_address,
                 client_ip,
+                max_body_bytes,
             )
 
             WORKER_LOGGER.debug(
@@ -258,10 +269,37 @@ def handle_client(
                 extra={"event": "request_complete", "client": client_addr_str},
             )
 
-            clear_correlation_id()
-
             if should_terminate_connection:
                 break
+        finally:
+            clear_correlation_id()
+
+
+def handle_client(
+    client_socket: socket.socket,
+    client_address: tuple[str, int],
+    context: WorkerContext,
+) -> None:
+    """Process requests on a client socket until the connection is closed."""
+    client_ip = client_address[0]
+    current_thread = threading.current_thread()
+    lifecycle = _prepare_worker(context, client_socket, current_thread)
+    client_addr_str = format_client_address(client_address)
+    max_body_bytes = _max_body_bytes(context)
+    resources = _WorkerResources(
+        current_thread, client_socket, client_ip, client_addr_str
+    )
+
+    try:
+        _process_client_requests(
+            client_socket,
+            client_address,
+            context,
+            lifecycle,
+            client_ip,
+            client_addr_str,
+            max_body_bytes,
+        )
     except (
         ConnectionError,
         TimeoutError,

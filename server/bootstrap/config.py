@@ -4,6 +4,14 @@ import argparse
 import os
 from dataclasses import dataclass
 
+from server.domain import (
+    ALLOWED_METHODS,
+    DEFAULT_MAX_BODY_BYTES,
+    FILES_ENDPOINT_PREFIX,
+    HEADER_DELIMITER,
+    SECURITY_HEADERS,
+)
+
 
 def _env_int(name: str, default: int) -> int:
     value = os.getenv(name)
@@ -24,7 +32,7 @@ def _env_list(name: str, default: list[str]) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-MAX_BODY_BYTES = _env_int("HTTP_SERVER_MAX_BODY_BYTES", 5 * 1024 * 1024)
+MAX_BODY_BYTES = _env_int("HTTP_SERVER_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)
 DEFAULT_MAX_CONNECTIONS = _env_int("HTTP_SERVER_MAX_CONNECTIONS", 200)
 DEFAULT_MAX_CONNECTIONS_PER_IP = _env_int("HTTP_SERVER_MAX_CONNECTIONS_PER_IP", 20)
 DEFAULT_RATE_LIMIT = _env_int("HTTP_SERVER_RATE_LIMIT", 50)
@@ -46,16 +54,6 @@ DEFAULT_CORS_EXPOSE_HEADERS = _env_list(
 DEFAULT_CORS_ALLOW_CREDENTIALS = _env_bool("HTTP_SERVER_CORS_ALLOW_CREDENTIALS", False)
 DEFAULT_CORS_MAX_AGE = _env_int("HTTP_SERVER_CORS_MAX_AGE", 86400)
 
-HEADER_DELIMITER = b"\r\n\r\n"
-FILES_ENDPOINT_PREFIX = "/files/"
-ALLOWED_METHODS = {"GET", "POST", "OPTIONS"}
-
-SECURITY_HEADERS = {
-    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
-    "Content-Security-Policy": "default-src 'self'",
-    "X-Content-Type-Options": "nosniff",
-}
-
 
 @dataclass
 class ServerConfig:
@@ -63,16 +61,11 @@ class ServerConfig:
 
     socket_timeout: int
     shutdown_grace_seconds: int
+    max_body_bytes: int = MAX_BODY_BYTES
 
 
-def parse_cli_args(argv: list[str]) -> argparse.Namespace:
-    """Return parsed CLI arguments for server configuration."""
-    parser = argparse.ArgumentParser(description="HTTP server configuration")
-    parser.add_argument("--directory", default=".")
-    parser.add_argument("--host", default="localhost")
-    parser.add_argument("--port", type=int, default=4221)
-    parser.add_argument("--cert", help="Path to TLS certificate file")
-    parser.add_argument("--key", help="Path to TLS private key file")
+def _add_logging_args(parser: argparse.ArgumentParser) -> None:
+    """Add logging configuration arguments."""
     default_log_level = os.getenv("HTTP_SERVER_LOG_LEVEL", "INFO").upper()
     default_destination = os.getenv("HTTP_SERVER_LOG_DESTINATION", "stdout")
     parser.add_argument(
@@ -86,6 +79,10 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
         default=default_destination,
         help="stdout or a file path",
     )
+
+
+def _add_connection_limit_args(parser: argparse.ArgumentParser) -> None:
+    """Add connection and rate-limit arguments."""
     parser.add_argument(
         "--max-connections",
         type=int,
@@ -122,6 +119,10 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
         default=DEFAULT_RATE_LIMIT_DRY_RUN,
         help="Log rate limit breaches without enforcing",
     )
+
+
+def _add_timeout_args(parser: argparse.ArgumentParser) -> None:
+    """Add socket and shutdown timeout arguments."""
     parser.add_argument(
         "--socket-timeout",
         type=int,
@@ -134,6 +135,10 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
         default=DEFAULT_SHUTDOWN_GRACE_SECONDS,
         help="Grace period in seconds for graceful shutdown",
     )
+
+
+def _add_cors_args(parser: argparse.ArgumentParser) -> None:
+    """Add CORS configuration arguments."""
     parser.add_argument(
         "--cors-allowed-origins",
         default=",".join(DEFAULT_CORS_ALLOWED_ORIGINS),
@@ -166,4 +171,18 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
         default=DEFAULT_CORS_MAX_AGE,
         help="CORS preflight cache duration in seconds",
     )
+
+
+def parse_cli_args(argv: list[str]) -> argparse.Namespace:
+    """Return parsed CLI arguments for server configuration."""
+    parser = argparse.ArgumentParser(description="HTTP server configuration")
+    parser.add_argument("--directory", default=".")
+    parser.add_argument("--host", default="localhost")
+    parser.add_argument("--port", type=int, default=4221)
+    parser.add_argument("--cert", help="Path to TLS certificate file")
+    parser.add_argument("--key", help="Path to TLS private key file")
+    _add_logging_args(parser)
+    _add_connection_limit_args(parser)
+    _add_timeout_args(parser)
+    _add_cors_args(parser)
     return parser.parse_args(argv)

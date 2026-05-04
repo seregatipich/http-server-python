@@ -5,20 +5,24 @@ import mimetypes
 from pathlib import Path
 from typing import Iterator
 
-from server.domain.correlation_id import CorrelationLoggerAdapter
-from server.domain.http_types import HttpRequest, HttpResponse, should_close
-from server.domain.response_builders import (
+from server.domain import (
+    CorrelationLoggerAdapter,
+    ForbiddenPath,
+    HttpRequest,
+    HttpResponse,
+    apply_cors_headers,
     empty_response,
     forbidden_response,
     method_not_allowed_response,
     not_found_response,
+    resolve_sandbox_path,
+    should_close,
 )
-from server.domain.sandbox import ForbiddenPath, resolve_sandbox_path
-from server.security.cors import apply_cors_headers
 
 FILE_LOGGER = CorrelationLoggerAdapter(
     logging.getLogger("http_server.handlers.file"), {}
 )
+FILE_ALLOWED_METHODS = ("GET", "POST")
 
 
 def stream_file(filepath: Path, chunk_size: int = 65536) -> Iterator[bytes]:
@@ -75,6 +79,89 @@ def _streaming_file_response(
     )
 
 
+def _get_file_response(
+    request: HttpRequest,
+    resolved_path: Path,
+    cors_config,
+    security_headers: dict[str, str],
+) -> HttpResponse:
+    if resolved_path.exists() and resolved_path.is_file():
+        if FILE_LOGGER.logger.isEnabledFor(logging.DEBUG):
+            FILE_LOGGER.debug(
+                "File read started",
+                extra={
+                    "event": "file_read_started",
+                    "path": resolved_path.as_posix(),
+                },
+            )
+        return _streaming_file_response(
+            request, resolved_path, cors_config, security_headers
+        )
+    FILE_LOGGER.info(
+        "File not found",
+        extra={
+            "event": "file_not_found",
+            "path": resolved_path.as_posix(),
+            "method": request.method,
+        },
+    )
+    return not_found_response(request, cors_config, security_headers)
+
+
+def _post_file_response(
+    request: HttpRequest,
+    resolved_path: Path,
+    cors_config,
+    security_headers: dict[str, str],
+) -> HttpResponse:
+    if FILE_LOGGER.logger.isEnabledFor(logging.DEBUG):
+        FILE_LOGGER.debug(
+            "File write started",
+            extra={
+                "event": "file_write_started",
+                "path": resolved_path.as_posix(),
+                "bytes": len(request.body),
+            },
+        )
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(resolved_path, "wb") as file_handle:
+        file_handle.write(request.body)
+    FILE_LOGGER.info(
+        "File write complete",
+        extra={
+            "event": "file_write_complete",
+            "path": resolved_path.as_posix(),
+            "method": request.method,
+            "bytes_out": len(request.body),
+        },
+    )
+    headers = security_headers.copy()
+    apply_cors_headers(headers, request, cors_config)
+    return HttpResponse(
+        "HTTP/1.1 201 Created",
+        headers,
+        b"",
+        should_close(request.headers),
+    )
+
+
+def _unsupported_file_method_response(
+    request: HttpRequest,
+    resolved_path: Path,
+    cors_config,
+    security_headers: dict[str, str],
+) -> HttpResponse:
+    if resolved_path.is_dir():
+        return forbidden_response(request, cors_config, security_headers)
+    FILE_LOGGER.warning(
+        "Unsupported method",
+        extra={"path": resolved_path.as_posix(), "method": request.method},
+    )
+    return method_not_allowed_response(
+        request, cors_config, security_headers, FILE_ALLOWED_METHODS
+    )
+
+
 def file_response(
     request: HttpRequest,
     directory: str,
@@ -99,64 +186,16 @@ def file_response(
         return forbidden_response(request, cors_config, security_headers)
 
     if request.method == "GET":
-        if resolved_path.exists() and resolved_path.is_file():
-            if FILE_LOGGER.logger.isEnabledFor(logging.DEBUG):
-                FILE_LOGGER.debug(
-                    "File read started",
-                    extra={
-                        "event": "file_read_started",
-                        "path": resolved_path.as_posix(),
-                    },
-                )
-            return _streaming_file_response(
-                request, resolved_path, cors_config, security_headers
-            )
-        FILE_LOGGER.info(
-            "File not found",
-            extra={
-                "event": "file_not_found",
-                "path": resolved_path.as_posix(),
-                "method": request.method,
-            },
+        return _get_file_response(
+            request, resolved_path, cors_config, security_headers
         )
-        return not_found_response(request, cors_config, security_headers)
     if request.method == "POST":
-        if FILE_LOGGER.logger.isEnabledFor(logging.DEBUG):
-            FILE_LOGGER.debug(
-                "File write started",
-                extra={
-                    "event": "file_write_started",
-                    "path": resolved_path.as_posix(),
-                    "bytes": len(request.body),
-                },
-            )
-        resolved_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(resolved_path, "wb") as file_handle:
-            file_handle.write(request.body)
-        FILE_LOGGER.info(
-            "File write complete",
-            extra={
-                "event": "file_write_complete",
-                "path": resolved_path.as_posix(),
-                "method": request.method,
-                "bytes_out": len(request.body),
-            },
+        return _post_file_response(
+            request, resolved_path, cors_config, security_headers
         )
-        headers = security_headers.copy()
-        apply_cors_headers(headers, request, cors_config)
-        return HttpResponse(
-            "HTTP/1.1 201 Created",
-            headers,
-            b"",
-            should_close(request.headers),
-        )
-    if resolved_path.is_dir():
-        return forbidden_response(request, cors_config, security_headers)
-    FILE_LOGGER.warning(
-        "Unsupported method",
-        extra={"path": resolved_path.as_posix(), "method": request.method},
+    return _unsupported_file_method_response(
+        request, resolved_path, cors_config, security_headers
     )
-    return method_not_allowed_response(request, cors_config, security_headers, None)
 
 
 def index_response(

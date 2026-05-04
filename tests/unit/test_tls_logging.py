@@ -4,7 +4,7 @@ import logging
 import ssl
 from unittest.mock import MagicMock, patch
 
-from server.bootstrap.socket_factory import create_server_socket
+from server.bootstrap import create_server_socket
 
 
 def test_create_server_socket_logs_tls_error(caplog):
