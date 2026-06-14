@@ -33,7 +33,7 @@ openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem \
 
 ```bash
 source venv/bin/activate
-python3 main.py --directory ./data --host localhost --port 4221
+pyhttpd --directory ./data --host localhost --port 4221
 ```
 
 - `--directory` selects the root for `/files/*` requests. Create the folder beforehand if it should be isolated from the repo root.
@@ -43,7 +43,7 @@ python3 main.py --directory ./data --host localhost --port 4221
 
 ```bash
 source venv/bin/activate
-python3 main.py --directory ./data --host 0.0.0.0 --port 4221 \
+pyhttpd --directory ./data --host 0.0.0.0 --port 4221 \
   --cert certs/cert.pem --key certs/key.pem
 ```
 
@@ -97,14 +97,14 @@ By default, the server allows all origins (`*`) with the following configuration
 **Restrict to specific origins:**
 
 ```bash
-python3 main.py --directory ./data \
+pyhttpd --directory ./data \
   --cors-allowed-origins "https://app.example.com,https://admin.example.com"
 ```
 
 **Enable credentials with specific origin:**
 
 ```bash
-python3 main.py --directory ./data \
+pyhttpd --directory ./data \
   --cors-allowed-origins "https://app.example.com" \
   --cors-allow-credentials
 ```
@@ -112,7 +112,7 @@ python3 main.py --directory ./data \
 **Custom headers and methods:**
 
 ```bash
-python3 main.py --directory ./data \
+pyhttpd --directory ./data \
   --cors-allowed-methods "GET,POST,PUT,DELETE,OPTIONS" \
   --cors-allowed-headers "Content-Type,Authorization,X-Custom-Header"
 ```
@@ -300,7 +300,7 @@ done
 
 ## 10. Shutdown and cleanup
 
-- Press `Ctrl+C` in the terminal running `main.py` to trigger graceful shutdown.
+- Press `Ctrl+C` in the terminal running `pyhttpd` to trigger graceful shutdown.
 - The server will complete in-flight requests before exiting.
 - Terminate the virtual environment session with `deactivate` when finished.
 - Remove test files created under the configured `--directory` if they are no longer needed.

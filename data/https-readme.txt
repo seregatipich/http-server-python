@@ -23,7 +23,7 @@ Threaded HTTP/1.1 server with echo, user-agent inspection, configurable file IO,
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -e '.[dev]'
 ```
 
 After completing these steps, continue with the detailed [Usage Guide](docs/USAGE_GUIDE.md) for TLS setup, LAN access, and operational workflows.
@@ -31,7 +31,7 @@ After completing these steps, continue with the detailed [Usage Guide](docs/USAG
 ## Usage
 
 ```bash
-python3 main.py [--directory <path>] [--host <host>] [--port <port>] \
+pyhttpd [--directory <path>] [--host <host>] [--port <port>] \
   [--cert <cert.pem>] [--key <key.pem>] \
   [--log-level <LEVEL>] [--log-destination <stdout|path>]
 ```
