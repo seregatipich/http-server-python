@@ -1,6 +1,6 @@
 """Public bootstrap API."""
 
-from server.bootstrap.config import (
+from pyhttpd.bootstrap.config import (
     DEFAULT_BURST_CAPACITY,
     DEFAULT_MAX_CONNECTIONS,
     DEFAULT_MAX_CONNECTIONS_PER_IP,
@@ -11,13 +11,13 @@ from server.bootstrap.config import (
     ServerConfig,
     parse_cli_args,
 )
-from server.bootstrap.logging_setup import (
+from pyhttpd.bootstrap.logging_setup import (
     CorrelationIdFilter,
     JsonFormatter,
     configure_logging,
     redact_sensitive,
 )
-from server.bootstrap.socket_factory import create_server_socket
+from pyhttpd.bootstrap.socket_factory import create_server_socket
 
 __all__ = [
     "DEFAULT_BURST_CAPACITY",

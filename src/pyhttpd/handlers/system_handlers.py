@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from server.domain import (
+from pyhttpd.domain import (
     CorrelationLoggerAdapter,
     CorsConfig,
     HttpRequest,

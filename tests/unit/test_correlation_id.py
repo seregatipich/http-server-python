@@ -5,7 +5,7 @@ import threading
 import uuid
 from unittest.mock import MagicMock
 
-from server.domain import (
+from pyhttpd.domain import (
     CorrelationLoggerAdapter,
     clear_correlation_id,
     generate_correlation_id,

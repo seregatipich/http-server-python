@@ -4,7 +4,7 @@ import argparse
 import os
 from dataclasses import dataclass
 
-from server.domain import (
+from pyhttpd.domain import (
     ALLOWED_METHODS,
     DEFAULT_MAX_BODY_BYTES,
     FILES_ENDPOINT_PREFIX,

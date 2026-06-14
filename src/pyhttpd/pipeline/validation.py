@@ -1,6 +1,6 @@
 """Request validation utilities for HTTP server."""
 
-from server.domain import (
+from pyhttpd.domain import (
     HttpRequest,
     RequestEntityTooLarge,
     bad_request_response,

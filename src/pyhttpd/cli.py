@@ -4,9 +4,9 @@ import logging
 import signal
 import sys
 
-from server.bootstrap import ServerConfig, configure_logging, parse_cli_args
-from server.lifecycle import ServerLifecycle
-from server.transport import run_server
+from pyhttpd.bootstrap import ServerConfig, configure_logging, parse_cli_args
+from pyhttpd.lifecycle import ServerLifecycle
+from pyhttpd.transport import run_server
 
 MAIN_LOGGER = logging.getLogger("http_server.main")
 
@@ -47,7 +47,3 @@ def main() -> None:
         },
     )
     run_server(args, config, lifecycle)
-
-
-if __name__ == "__main__":
-    main()

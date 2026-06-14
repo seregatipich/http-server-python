@@ -4,7 +4,7 @@ import logging
 import ssl
 from unittest.mock import MagicMock, patch
 
-from server.bootstrap import create_server_socket
+from pyhttpd.bootstrap import create_server_socket
 
 
 def test_create_server_socket_logs_tls_error(caplog):
@@ -17,13 +17,13 @@ def test_create_server_socket_logs_tls_error(caplog):
     mock_args.cert = "fake_cert.pem"
     mock_args.key = "fake_key.pem"
 
-    with patch(
-        "server.bootstrap.socket_factory.socket.create_server"
-    ) as mock_create_server, patch(
-        "server.bootstrap.socket_factory.ssl.SSLContext"
-    ) as mock_ssl_context, patch(
-        "server.bootstrap.socket_factory.sys.exit"
-    ) as mock_exit:
+    with (
+        patch(
+            "pyhttpd.bootstrap.socket_factory.socket.create_server"
+        ) as mock_create_server,
+        patch("pyhttpd.bootstrap.socket_factory.ssl.SSLContext") as mock_ssl_context,
+        patch("pyhttpd.bootstrap.socket_factory.sys.exit") as mock_exit,
+    ):
 
         mock_server_sock = MagicMock()
         mock_create_server.return_value = mock_server_sock

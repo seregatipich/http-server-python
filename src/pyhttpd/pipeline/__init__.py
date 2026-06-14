@@ -1,15 +1,15 @@
 """Public request pipeline API."""
 
-from server.pipeline.io import (
+from pyhttpd.pipeline.io import (
     determine_content_length,
     parse_headers,
     parse_request_line,
     receive_request,
     send_response,
 )
-from server.pipeline.rate_limiting import apply_rate_limit
-from server.pipeline.router import route_request
-from server.pipeline.validation import (
+from pyhttpd.pipeline.rate_limiting import apply_rate_limit
+from pyhttpd.pipeline.router import route_request
+from pyhttpd.pipeline.validation import (
     enforce_allowed_method,
     enforce_post_constraints,
     enforce_safe_path,

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 import requests
 
-from server.bootstrap import MAX_BODY_BYTES
+from pyhttpd.bootstrap import MAX_BODY_BYTES
 
 pytestmark = pytest.mark.integration
 

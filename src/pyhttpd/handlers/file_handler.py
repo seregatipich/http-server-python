@@ -5,7 +5,7 @@ import mimetypes
 from pathlib import Path
 from typing import Iterator
 
-from server.domain import (
+from pyhttpd.domain import (
     CorrelationLoggerAdapter,
     ForbiddenPath,
     HttpRequest,
@@ -186,9 +186,7 @@ def file_response(
         return forbidden_response(request, cors_config, security_headers)
 
     if request.method == "GET":
-        return _get_file_response(
-            request, resolved_path, cors_config, security_headers
-        )
+        return _get_file_response(request, resolved_path, cors_config, security_headers)
     if request.method == "POST":
         return _post_file_response(
             request, resolved_path, cors_config, security_headers

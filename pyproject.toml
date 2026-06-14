@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyhttpd"
+description = "A from-scratch HTTP/1.1 server in pure Python with zero runtime dependencies."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dynamic = ["version"]
+dependencies = []
+
+[project.scripts]
+pyhttpd = "pyhttpd.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=9", "requests>=2.32", "black", "isort", "pylint", "mypy", "ruff"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+version = { attr = "pyhttpd.__version__" }
+
+[tool.isort]
+profile = "black"
+known_first_party = ["pyhttpd"]
+src_paths = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not performance'"
+markers = [
+  "integration: requires live server",
+  "performance: long-running load or stress scenarios",
+]

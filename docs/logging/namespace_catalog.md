@@ -11,7 +11,7 @@ The `component` portion is automatically extracted by `CorrelationLoggerAdapter`
 ## Bootstrap & Startup
 
 ### `http_server.main`
-**Module**: `main.py`  
+**Module**: `pyhttpd/cli.py`  
 **Events**:
 - `server_starting` - Server initialization beginning
 - `shutdown_signal_received` - SIGTERM or SIGINT received

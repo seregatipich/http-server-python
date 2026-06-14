@@ -1,5 +1,5 @@
 """Public lifecycle API."""
 
-from server.lifecycle.state import ServerLifecycle
+from pyhttpd.lifecycle.state import ServerLifecycle
 
 __all__ = ["ServerLifecycle"]

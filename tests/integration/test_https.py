@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from typing import Final
@@ -28,8 +29,9 @@ def https_server_url() -> Iterator[str]:
         pytest.skip("Certificate or key file missing, skipping HTTPS tests")
 
     cmd = [
-        "python3",
-        "main.py",
+        sys.executable,
+        "-m",
+        "pyhttpd",
         "--port",
         str(PORT),
         "--cert",
