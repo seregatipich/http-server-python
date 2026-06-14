@@ -1,15 +1,11 @@
 """Pure HTTP response builders."""
 
-from dataclasses import dataclass
 import gzip
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from server.domain.http_types import (
-    HttpRequest,
-    HttpResponse,
-    should_close,
-)
+from pyhttpd.domain.http_types import HttpRequest, HttpResponse, should_close
 
 
 @dataclass

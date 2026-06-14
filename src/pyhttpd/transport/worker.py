@@ -7,15 +7,15 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-from server.domain import (
+from pyhttpd.domain import (
     ALLOWED_METHODS,
+    DEFAULT_MAX_BODY_BYTES,
+    SECURITY_HEADERS,
     CorrelationLoggerAdapter,
     CorsConfig,
-    DEFAULT_MAX_BODY_BYTES,
     ForbiddenPath,
     HttpRequest,
     RequestEntityTooLarge,
-    SECURITY_HEADERS,
     bad_request_response,
     clear_correlation_id,
     draining_response,
@@ -27,14 +27,14 @@ from server.domain import (
     preflight_response,
     set_correlation_id,
 )
-from server.pipeline import (
+from pyhttpd.pipeline import (
     apply_rate_limit,
     receive_request,
     route_request,
     send_response,
     validate_request,
 )
-from server.transport.context import WorkerContext
+from pyhttpd.transport.context import WorkerContext
 
 WORKER_LOGGER = CorrelationLoggerAdapter(
     logging.getLogger("http_server.transport.worker"), {}

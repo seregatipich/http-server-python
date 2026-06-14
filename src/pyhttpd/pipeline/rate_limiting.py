@@ -4,16 +4,16 @@ import logging
 import socket
 from typing import Optional
 
-from server.domain import (
-    CorrelationLoggerAdapter,
+from pyhttpd.domain import (
     SECURITY_HEADERS,
+    CorrelationLoggerAdapter,
     HttpRequest,
     RateLimitDecision,
     TokenBucketLimiter,
     format_client_address,
     rate_limited_response,
 )
-from server.pipeline.io import send_response
+from pyhttpd.pipeline.io import send_response
 
 LIMITER_LOGGER = CorrelationLoggerAdapter(
     logging.getLogger("http_server.pipeline.rate_limiting"), {}

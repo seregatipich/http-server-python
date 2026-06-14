@@ -1,13 +1,13 @@
 """Public domain API for HTTP server internals."""
 
-from server.domain.correlation_id import (
+from pyhttpd.domain.correlation_id import (
     CorrelationLoggerAdapter,
     clear_correlation_id,
     generate_correlation_id,
     get_correlation_id,
     set_correlation_id,
 )
-from server.domain.http_types import (
+from pyhttpd.domain.http_types import (
     ALLOWED_METHODS,
     DEFAULT_MAX_BODY_BYTES,
     FILES_ENDPOINT_PREFIX,
@@ -20,7 +20,7 @@ from server.domain.http_types import (
     format_client_address,
     should_close,
 )
-from server.domain.response_builders import (
+from pyhttpd.domain.response_builders import (
     CorsConfig,
     accepts_gzip,
     apply_cors_headers,
@@ -40,8 +40,8 @@ from server.domain.response_builders import (
     rate_limited_response,
     text_response,
 )
-from server.domain.sandbox import ForbiddenPath, resolve_sandbox_path
-from server.domain.token_bucket import (
+from pyhttpd.domain.sandbox import ForbiddenPath, resolve_sandbox_path
+from pyhttpd.domain.token_bucket import (
     RateLimitDecision,
     TokenBucketLimiter,
     TokenBucketSettings,

@@ -3,8 +3,8 @@
 import gzip
 from pathlib import Path
 
-from server.domain import HttpRequest
-from server.pipeline import route_request
+from pyhttpd.domain import HttpRequest
+from pyhttpd.pipeline import route_request
 
 
 def make_request(

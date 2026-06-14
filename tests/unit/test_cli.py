@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from server.bootstrap import (
+from pyhttpd.bootstrap import (
     DEFAULT_BURST_CAPACITY,
     DEFAULT_MAX_CONNECTIONS,
     DEFAULT_MAX_CONNECTIONS_PER_IP,

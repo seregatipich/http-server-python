@@ -6,10 +6,10 @@ import socket
 import threading
 from typing import Optional
 
-from server.bootstrap import ServerConfig, create_server_socket
-from server.domain import (
-    CorsConfig,
+from pyhttpd.bootstrap import ServerConfig, create_server_socket
+from pyhttpd.domain import (
     SECURITY_HEADERS,
+    CorsConfig,
     LifecycleState,
     TokenBucketLimiter,
     TokenBucketSettings,
@@ -17,10 +17,10 @@ from server.domain import (
     draining_response,
     format_client_address,
 )
-from server.pipeline import send_response
-from server.transport.connection_limiter import ConnectionLimiter
-from server.transport.context import WorkerContext
-from server.transport.worker import handle_client
+from pyhttpd.pipeline import send_response
+from pyhttpd.transport.connection_limiter import ConnectionLimiter
+from pyhttpd.transport.context import WorkerContext
+from pyhttpd.transport.worker import handle_client
 
 ACCEPT_LOGGER = logging.getLogger("http_server.transport.accept")
 

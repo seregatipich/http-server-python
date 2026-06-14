@@ -2,8 +2,8 @@
 
 import pytest
 
-from server.bootstrap import MAX_BODY_BYTES
-from server.domain import (
+from pyhttpd.bootstrap import MAX_BODY_BYTES
+from pyhttpd.domain import (
     ALLOWED_METHODS,
     CorsConfig,
     ForbiddenPath,
@@ -15,7 +15,7 @@ from server.domain import (
     preflight_response,
     resolve_sandbox_path,
 )
-from server.pipeline import validate_request
+from pyhttpd.pipeline import validate_request
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",

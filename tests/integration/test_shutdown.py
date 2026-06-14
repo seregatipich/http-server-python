@@ -32,7 +32,7 @@ def server_process_info():
         [
             sys.executable,
             "-m",
-            "main",
+            "pyhttpd",
             "--host",
             "127.0.0.1",
             "--port",

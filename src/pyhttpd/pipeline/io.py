@@ -5,11 +5,11 @@ import socket
 import urllib.parse
 from typing import Optional, Tuple
 
-from server.domain import (
-    CorrelationLoggerAdapter,
+from pyhttpd.domain import (
     DEFAULT_MAX_BODY_BYTES,
     FILES_ENDPOINT_PREFIX,
     HEADER_DELIMITER,
+    CorrelationLoggerAdapter,
     ForbiddenPath,
     HttpRequest,
     HttpResponse,

@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from _pytest.tmpdir import TempPathFactory
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SERVER_ENTRYPOINT = PROJECT_ROOT / "main.py"
 
 
 def _launch_server(
@@ -27,7 +26,8 @@ def _launch_server(
 ) -> Generator[ServerProcessInfo, None, None]:
     args = [
         sys.executable,
-        str(SERVER_ENTRYPOINT),
+        "-m",
+        "pyhttpd",
         "--directory",
         str(directory),
         "--host",

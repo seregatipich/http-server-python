@@ -1,7 +1,7 @@
 """Unit tests for connection and rate limiting helpers."""
 
-from server.domain import TokenBucketLimiter, TokenBucketSettings
-from server.transport import ConnectionLimiter
+from pyhttpd.domain import TokenBucketLimiter, TokenBucketSettings
+from pyhttpd.transport import ConnectionLimiter
 
 
 def test_connection_limiter_enforces_global_and_per_ip() -> None:

@@ -1,21 +1,21 @@
 """Request routing logic."""
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from typing import Optional
 
-from server.domain import (
-    CorrelationLoggerAdapter,
-    CorsConfig,
+from pyhttpd.domain import (
     FILES_ENDPOINT_PREFIX,
     SECURITY_HEADERS,
+    CorrelationLoggerAdapter,
+    CorsConfig,
     HttpRequest,
     HttpResponse,
     LifecycleState,
     forbidden_response,
     not_found_response,
 )
-from server.handlers import (
+from pyhttpd.handlers import (
     file_response,
     handle_echo,
     handle_healthz,
