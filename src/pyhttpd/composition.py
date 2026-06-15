@@ -3,6 +3,7 @@
 import argparse
 import logging
 import signal
+import socket
 from dataclasses import dataclass
 from typing import Optional
 
@@ -73,7 +74,7 @@ def _create_worker_context(
 class Server:
     """Fully wired server ready to accept connections."""
 
-    server_socket: object
+    server_socket: socket.socket
     args: argparse.Namespace
     config: ServerConfig
     lifecycle: LifecycleState

@@ -1,11 +1,12 @@
 """Pure HTTP response builders."""
 
 import gzip
+import logging
 from collections.abc import Iterable
 from typing import Optional, Tuple
 
 from pyhttpd.application.middleware.cors import apply_cors_headers
-from pyhttpd.domain.config import SECURITY_HEADERS
+from pyhttpd.domain.config import SECURITY_HEADERS, CorsConfig
 from pyhttpd.domain.errors import (
     BadRequest,
     Forbidden,
@@ -18,6 +19,7 @@ from pyhttpd.domain.errors import (
     ServiceUnavailable,
 )
 from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
+from pyhttpd.domain.ratelimit import RateLimitDecision
 
 
 def _gzip_quality(params: str) -> float:
@@ -49,7 +51,7 @@ def accepts_gzip(headers: dict[str, str]) -> bool:
 
 
 def compress_if_gzip_supported(
-    payload: bytes, headers: dict[str, str], compression_logger
+    payload: bytes, headers: dict[str, str], compression_logger: logging.Logger
 ) -> Tuple[bytes, dict[str, str]]:
     """Compress the payload when the request advertises gzip support."""
     if not accepts_gzip(headers):
@@ -91,7 +93,7 @@ def _basic_response(
 def _request_response(
     status_line: str,
     request: Optional[HttpRequest],
-    cors_config,
+    cors_config: Optional[CorsConfig],
     security_headers: dict[str, str],
     body: bytes = b"",
     extra_headers: Optional[dict[str, str]] = None,
@@ -109,7 +111,9 @@ def _request_response(
 
 
 def empty_response(
-    request: HttpRequest, cors_config, security_headers: dict[str, str]
+    request: HttpRequest,
+    cors_config: Optional[CorsConfig],
+    security_headers: dict[str, str],
 ) -> HttpResponse:
     """Return a 200 OK response with no body."""
     return _request_response("HTTP/1.1 200 OK", request, cors_config, security_headers)
@@ -118,9 +122,9 @@ def empty_response(
 def text_response(
     message: str,
     request: HttpRequest,
-    cors_config,
+    cors_config: Optional[CorsConfig],
     security_headers: dict[str, str],
-    compression_logger,
+    compression_logger: logging.Logger,
 ) -> HttpResponse:
     """Return a text/plain response, compressing when appropriate."""
     payload = message.encode()
@@ -138,7 +142,9 @@ def text_response(
 
 
 def not_found_response(
-    request: HttpRequest, cors_config, security_headers: dict[str, str]
+    request: Optional[HttpRequest],
+    cors_config: Optional[CorsConfig],
+    security_headers: dict[str, str],
 ) -> HttpResponse:
     """Return a 404 response reusing the connection preference."""
     return _request_response(
@@ -150,7 +156,9 @@ def not_found_response(
 
 
 def forbidden_response(
-    request: Optional[HttpRequest], cors_config, security_headers: dict[str, str]
+    request: Optional[HttpRequest],
+    cors_config: Optional[CorsConfig],
+    security_headers: dict[str, str],
 ) -> HttpResponse:
     """Produce a 403 response honoring the caller's connection preference."""
     return _request_response(
@@ -162,7 +170,9 @@ def forbidden_response(
 
 
 def bad_request_response(
-    request: Optional[HttpRequest], cors_config, security_headers: dict[str, str]
+    request: Optional[HttpRequest],
+    cors_config: Optional[CorsConfig],
+    security_headers: dict[str, str],
 ) -> HttpResponse:
     """Produce a 400 response honoring the caller's connection preference."""
     return _request_response(
@@ -179,7 +189,9 @@ def entity_too_large_response(security_headers: dict[str, str]) -> HttpResponse:
 
 
 def rate_limited_response(
-    decision, request: HttpRequest, security_headers: dict[str, str]
+    decision: RateLimitDecision,
+    request: Optional[HttpRequest],
+    security_headers: dict[str, str],
 ) -> HttpResponse:
     """Create a 429 response populated with RateLimit headers."""
     retry_after = max(1, int(decision.reset_seconds)) if decision.reset_seconds else 1
@@ -189,7 +201,7 @@ def rate_limited_response(
         security_headers,
         body,
         {"Retry-After": str(retry_after), **decision.headers},
-        should_close(request.headers),
+        _request_close_preference(request),
     )
 
 
@@ -232,8 +244,8 @@ def healthz_response(
 
 
 def method_not_allowed_response(
-    request: HttpRequest,
-    cors_config,
+    request: Optional[HttpRequest],
+    cors_config: Optional[CorsConfig],
     security_headers: dict[str, str],
     allowed_methods: Iterable[str],
 ) -> HttpResponse:
@@ -264,7 +276,9 @@ class ErrorMapper:
 
     @staticmethod
     def to_response(  # pylint: disable=too-many-return-statements
-        error: HttpError, request: Optional[HttpRequest], cors_config
+        error: HttpError,
+        request: Optional[HttpRequest],
+        cors_config: Optional[CorsConfig],
     ) -> HttpResponse:
         """Map a domain HttpError to its corresponding HTTP response."""
         if isinstance(error, BadRequest):
@@ -287,7 +301,8 @@ class ErrorMapper:
 
     @staticmethod
     def internal_error(
-        request: Optional[HttpRequest], cors_config  # pylint: disable=unused-argument
+        request: Optional[HttpRequest],
+        cors_config: Optional[CorsConfig],  # pylint: disable=unused-argument
     ) -> HttpResponse:
         """Produce the 500 response for unexpected, non-HttpError failures."""
         return internal_error_response(request, SECURITY_HEADERS)

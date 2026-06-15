@@ -15,7 +15,7 @@ Threaded HTTP/1.1 server with echo, user-agent inspection, configurable file IO,
 - **Transport security**: Passing `--cert` and `--key` enables TLS 1.3 termination directly in the server process.
 - **Security headers**: Strict-Transport-Security, Content-Security-Policy, and X-Content-Type-Options are attached to every response, including 404s.
 - **Request validation and sandboxing**: `/files/*` is restricted to the configured root, blocking traversal (`..`) and null bytes; uploads enforce `Content-Length` and reject bodies over `HTTP_SERVER_MAX_BODY_BYTES` (default 5 MiB).
-- **Structured logging**: `logging_config.configure_logging()` wires a shared logger hierarchy (`http_server.*`) with configurable destinations and levels.
+- **Structured logging**: `pyhttpd.adapters.logging.setup.configure_logging()` wires a shared logger hierarchy (`http_server.*`) with configurable destinations and levels.
 - **Connection and rate limiting**: configurable caps for total sockets, per-IP concurrency, and token-bucket request throttling with standards-based RateLimit headers.
 
 ## Requirements
@@ -86,6 +86,16 @@ Environment variables mirror the logging flags:
    - `send_response()` merges security headers, applies chunked framing when a generator is present, and streams chunks until the handler signals completion.
    - Responses honor `Connection: close` directives and release rate/connection counters as worker threads unwind.
 
+## Architecture
+
+The codebase follows a clean-architecture layering under `src/pyhttpd/`, with dependencies pointing inward only:
+
+- `domain/` — dependency-free core: HTTP value types, errors, config schemas, rate-limit decisions, sandbox rules, and port protocols.
+- `application/` — request pipeline, routing, middleware (CORS, rate limiting, validation), response rendering, and endpoint handlers. Depends on `domain` only.
+- `adapters/` — infrastructure that satisfies the domain ports: sockets and TLS, the threaded transport/worker loop, logging, token-bucket rate limiting, clock, ids, and config loading.
+- `composition.py` — composition root that wires adapters, application, and domain into a runnable `Server`.
+- `cli.py` / `__main__.py` — entrypoints that parse arguments and invoke the composition root.
+
 ## Endpoints
 
 | Method | Path pattern    | Description                                          |
@@ -101,7 +111,7 @@ Responses advertise `Content-Encoding: gzip` when the client opts in.
 
 ## Logging
 
-`server.bootstrap.logging_setup.configure_logging()` sets the base logger once, giving the server and compression modules consistent formatting and context. Use `--log-level DEBUG` when you need socket-level traces and revert back to INFO to keep noise low. Point `--log-destination` to a file when long-running tests would overwhelm stdout.
+`pyhttpd.adapters.logging.setup.configure_logging()` sets the base logger once, giving the server and compression modules consistent formatting and context. Use `--log-level DEBUG` when you need socket-level traces and revert back to INFO to keep noise low. Point `--log-destination` to a file when long-running tests would overwhelm stdout.
 
 For a complete list of logged events and their structured fields, see the [Logging Namespace Catalog](docs/logging/namespace_catalog.md).
 

@@ -1,10 +1,10 @@
 [constraints]
-min_quality = 0.60
-min_modularity = 0.30
+min_quality = 0.64
+min_modularity = 0.42
 min_acyclicity = 1.0
-min_depth = 0.50
-min_equality = 0.50
-min_redundancy = 0.95
+min_depth = 0.41
+min_equality = 0.64
+min_redundancy = 0.97
 max_cycles = 0
 max_cc = 15
 max_fn_lines = 100
@@ -25,17 +25,6 @@ order = 2
 [[layers]]
 name = "adapters"
 paths = ["src/pyhttpd/adapters/**"]
-order = 1
-
-[[layers]]
-name = "legacy"
-paths = [
-    "src/pyhttpd/bootstrap/**",
-    "src/pyhttpd/lifecycle/**",
-    "src/pyhttpd/pipeline/**",
-    "src/pyhttpd/transport/**",
-    "src/pyhttpd/handlers/**",
-]
 order = 1
 
 [[layers]]

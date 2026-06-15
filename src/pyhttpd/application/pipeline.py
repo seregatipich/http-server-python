@@ -1,6 +1,6 @@
 """Middleware protocol and onion chain runner."""
 
-from typing import Callable, Protocol
+from typing import Callable, Iterable, Protocol
 
 from pyhttpd.application.context import RequestContext
 from pyhttpd.domain.http import HttpRequest, HttpResponse
@@ -16,7 +16,7 @@ class Middleware(Protocol):
     ) -> HttpResponse: ...
 
 
-def build_chain(middlewares, terminal: Handler) -> Handler:
+def build_chain(middlewares: Iterable[Middleware], terminal: Handler) -> Handler:
     """Fold middlewares right-to-left; middlewares[0] is outermost."""
     handler = terminal
     for middleware in reversed(list(middlewares)):

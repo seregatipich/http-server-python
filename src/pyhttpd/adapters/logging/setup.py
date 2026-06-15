@@ -36,6 +36,7 @@ def _build_handler(
     destination: Optional[str], level: int, use_json: bool = True
 ) -> logging.Handler:
     """Create a stdout or rotating file handler for the configured logger."""
+    handler: logging.Handler
     if destination and destination.lower() != "stdout":
         target_path = Path(destination)
         target_path.parent.mkdir(parents=True, exist_ok=True)
