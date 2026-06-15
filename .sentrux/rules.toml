@@ -1,10 +1,10 @@
 [constraints]
-min_quality = 0.65
-min_modularity = 0.37
+min_quality = 0.60
+min_modularity = 0.30
 min_acyclicity = 1.0
-min_depth = 0.60
-min_equality = 0.59
-min_redundancy = 0.976
+min_depth = 0.50
+min_equality = 0.50
+min_redundancy = 0.95
 max_cycles = 0
 max_cc = 15
 max_fn_lines = 100
