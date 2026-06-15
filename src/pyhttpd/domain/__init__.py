@@ -7,7 +7,18 @@ from pyhttpd.domain.config import (
     SECURITY_HEADERS,
     CorsConfig,
 )
-from pyhttpd.domain.errors import ForbiddenPath, RequestEntityTooLarge
+from pyhttpd.domain.errors import (
+    BadRequest,
+    Forbidden,
+    ForbiddenPath,
+    HttpError,
+    InternalServerError,
+    MethodNotAllowed,
+    NotFound,
+    RateLimited,
+    RequestEntityTooLarge,
+    ServiceUnavailable,
+)
 from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
 from pyhttpd.domain.ports import DrainingState
 from pyhttpd.domain.ratelimit import RateLimitDecision, TokenBucketSettings
@@ -40,12 +51,20 @@ __all__ = [
     "FILES_ENDPOINT_PREFIX",
     "SECURITY_HEADERS",
     "CorsConfig",
+    "BadRequest",
+    "Forbidden",
     "ForbiddenPath",
+    "HttpError",
     "HttpRequest",
     "HttpResponse",
+    "InternalServerError",
     "LifecycleState",
+    "MethodNotAllowed",
+    "NotFound",
     "RateLimitDecision",
+    "RateLimited",
     "RequestEntityTooLarge",
+    "ServiceUnavailable",
     "TokenBucketSettings",
     "accepts_gzip",
     "apply_cors_headers",
