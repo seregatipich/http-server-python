@@ -1,5 +1,12 @@
 """Public domain API for HTTP server internals."""
 
+from pyhttpd.domain.config import (
+    ALLOWED_METHODS,
+    DEFAULT_MAX_BODY_BYTES,
+    FILES_ENDPOINT_PREFIX,
+    SECURITY_HEADERS,
+    CorsConfig,
+)
 from pyhttpd.domain.correlation_id import (
     CorrelationLoggerAdapter,
     clear_correlation_id,
@@ -7,21 +14,17 @@ from pyhttpd.domain.correlation_id import (
     get_correlation_id,
     set_correlation_id,
 )
-from pyhttpd.domain.http_types import (
-    ALLOWED_METHODS,
-    DEFAULT_MAX_BODY_BYTES,
-    FILES_ENDPOINT_PREFIX,
+from pyhttpd.domain.errors import ForbiddenPath, RequestEntityTooLarge
+from pyhttpd.domain.http import (
     HEADER_DELIMITER,
-    SECURITY_HEADERS,
     HttpRequest,
     HttpResponse,
-    LifecycleState,
-    RequestEntityTooLarge,
     format_client_address,
     should_close,
 )
+from pyhttpd.domain.ports import DrainingState
+from pyhttpd.domain.ratelimit import RateLimitDecision, TokenBucketSettings
 from pyhttpd.domain.response_builders import (
-    CorsConfig,
     accepts_gzip,
     apply_cors_headers,
     bad_request_response,
@@ -40,12 +43,10 @@ from pyhttpd.domain.response_builders import (
     rate_limited_response,
     text_response,
 )
-from pyhttpd.domain.sandbox import ForbiddenPath, resolve_sandbox_path
-from pyhttpd.domain.token_bucket import (
-    RateLimitDecision,
-    TokenBucketLimiter,
-    TokenBucketSettings,
-)
+from pyhttpd.domain.sandbox import resolve_sandbox_path
+from pyhttpd.domain.token_bucket import TokenBucketLimiter
+
+LifecycleState = DrainingState
 
 __all__ = [
     "ALLOWED_METHODS",

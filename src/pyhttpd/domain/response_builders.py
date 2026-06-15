@@ -2,22 +2,10 @@
 
 import gzip
 from collections.abc import Iterable
-from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from pyhttpd.domain.http_types import HttpRequest, HttpResponse, should_close
-
-
-@dataclass
-class CorsConfig:
-    """CORS configuration for cross-origin resource sharing."""
-
-    allowed_origins: list[str]
-    allowed_methods: list[str]
-    allowed_headers: list[str]
-    expose_headers: list[str]
-    allow_credentials: bool
-    max_age: int
+from pyhttpd.domain.config import CorsConfig
+from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
 
 
 def is_preflight_request(request: HttpRequest) -> bool:
