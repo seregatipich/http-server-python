@@ -11,37 +11,54 @@ from pyhttpd.adapters.logging.correlation_adapter import (
     CorrelationLoggerAdapter,
     clear_correlation_id,
     generate_correlation_id,
+    get_correlation_id,
     set_correlation_id,
 )
 from pyhttpd.adapters.transport.context import WorkerContext
 from pyhttpd.adapters.transport.wire import format_client_address
-from pyhttpd.application.middleware.cors import is_preflight_request, preflight_response
+from pyhttpd.application.context import RequestContext
+from pyhttpd.application.middleware.cors import make_cors_middleware
+from pyhttpd.application.middleware.rate_limit import make_rate_limit_middleware
+from pyhttpd.application.middleware.validation import make_validation_middleware
+from pyhttpd.application.pipeline import build_chain
 from pyhttpd.application.rendering import (
+    ErrorMapper,
     bad_request_response,
     draining_response,
     entity_too_large_response,
     forbidden_response,
 )
+from pyhttpd.application.routing import make_default_router
 from pyhttpd.domain import (
     ALLOWED_METHODS,
     DEFAULT_MAX_BODY_BYTES,
     SECURITY_HEADERS,
-    CorsConfig,
     ForbiddenPath,
+    HttpError,
     HttpRequest,
+    HttpResponse,
     RequestEntityTooLarge,
+    should_close,
 )
-from pyhttpd.pipeline import (
-    apply_rate_limit,
-    receive_request,
-    route_request,
-    send_response,
-    validate_request,
-)
+from pyhttpd.pipeline import receive_request, send_response
 
 WORKER_LOGGER = CorrelationLoggerAdapter(
     logging.getLogger("http_server.transport.worker"), {}
 )
+
+
+class _PortLogger:  # pylint: disable=too-few-public-methods
+    """Adapt the correlation logger to the structured ports.Logger interface."""
+
+    def __init__(self, adapter: CorrelationLoggerAdapter) -> None:
+        self._adapter = adapter
+
+    def log(self, level: int, event: str, **fields: object) -> None:
+        """Emit a structured log event through the correlation adapter."""
+        self._adapter.log(level, event, extra={"event": event, **fields})
+
+
+WORKER_PORT_LOGGER = _PortLogger(WORKER_LOGGER)
 
 
 def _recv_with_deadline(client_socket: socket.socket, deadline_ns: int) -> bytes:
@@ -104,55 +121,67 @@ def _read_request_with_validation(
     return request, buffer, False
 
 
-def _handle_validation_response(
-    request: HttpRequest,
-    client_socket: socket.socket,
-    cors_config: Optional[CorsConfig],
-    max_body_bytes: int,
-) -> tuple[bool, bool]:
-    validation_response = validate_request(
-        request, ALLOWED_METHODS, max_body_bytes, cors_config, SECURITY_HEADERS
+def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes: int):
+    """Assemble the application middleware chain over the default router."""
+    router = make_default_router(
+        context.directory,
+        context.lifecycle,
+        WORKER_PORT_LOGGER,
+        context.cors_config,
     )
-    if validation_response is None:
-        return False, False
-    send_response(client_socket, validation_response)
-    return True, validation_response.close_connection
+
+    def terminal(request: HttpRequest, ctx: RequestContext) -> HttpResponse:
+        try:
+            response = router.dispatch(request, ctx)
+        except HttpError as error:
+            response = ErrorMapper.to_response(error, request, context.cors_config)
+        if ctx.rate_decision is not None:
+            response.headers.update(ctx.rate_decision.headers)
+        return response
+
+    middlewares = [make_cors_middleware(context.cors_config, SECURITY_HEADERS)]
+    if context.rate_limiter is not None:
+        middlewares.append(
+            make_rate_limit_middleware(
+                context.rate_limiter,
+                WORKER_PORT_LOGGER,
+                lambda request, ctx: client_ip,
+            )
+        )
+    middlewares.append(make_validation_middleware(ALLOWED_METHODS, max_body_bytes))
+    return build_chain(middlewares, terminal)
 
 
 def _process_request(
     request: HttpRequest,
     context: WorkerContext,
     client_socket: socket.socket,
-    client_address: tuple[str, int],
     client_ip: str,
+    client_addr_str: str,
     max_body_bytes: int,
 ) -> bool:
-    if is_preflight_request(request):
-        response = preflight_response(request, context.cors_config, SECURITY_HEADERS)
-        send_response(client_socket, response)
-        return response.close_connection
-
-    rate_decision, should_stop, should_close = apply_rate_limit(
-        context.rate_limiter,
-        client_ip,
-        client_socket,
-        client_address,
-        request,
+    ctx = RequestContext(
+        correlation_id=get_correlation_id(),
+        start_ns=time.monotonic_ns(),
+        request_wants_close=should_close(request.headers),
     )
-    if should_stop:
-        return should_close
-
-    handled, validation_requires_close = _handle_validation_response(
-        request, client_socket, context.cors_config, max_body_bytes
-    )
-    if handled:
-        return validation_requires_close
-
-    response = route_request(
-        request, context.directory, context.lifecycle, context.cors_config
-    )
-    if rate_decision is not None:
-        response.headers.update(rate_decision.headers)
+    chain = _build_request_chain(context, client_ip, max_body_bytes)
+    try:
+        response = chain(request, ctx)
+    except HttpError as error:
+        response = ErrorMapper.to_response(error, request, context.cors_config)
+    except Exception as error:  # pylint: disable=broad-except
+        WORKER_LOGGER.error(
+            "Unexpected error in worker",
+            extra={
+                "event": "worker_error",
+                "client": client_addr_str,
+                "error_type": type(error).__name__,
+                "error": str(error),
+            },
+            exc_info=True,
+        )
+        response = ErrorMapper.internal_error(request, context.cors_config)
     send_response(client_socket, response)
     return response.close_connection
 
@@ -262,8 +291,8 @@ def _process_client_requests(
                 request,
                 context,
                 client_socket,
-                client_address,
                 client_ip,
+                client_addr_str,
                 max_body_bytes,
             )
 

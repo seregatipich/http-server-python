@@ -5,6 +5,18 @@ from collections.abc import Iterable
 from typing import Optional, Tuple
 
 from pyhttpd.application.middleware.cors import apply_cors_headers
+from pyhttpd.domain.config import SECURITY_HEADERS
+from pyhttpd.domain.errors import (
+    BadRequest,
+    Forbidden,
+    ForbiddenPath,
+    HttpError,
+    MethodNotAllowed,
+    NotFound,
+    RateLimited,
+    RequestEntityTooLarge,
+    ServiceUnavailable,
+)
 from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
 
 
@@ -234,3 +246,48 @@ def method_not_allowed_response(
         security_headers,
         extra_headers={"Allow": allow_header},
     )
+
+
+def internal_error_response(
+    request: Optional[HttpRequest], security_headers: dict[str, str]
+) -> HttpResponse:
+    """Produce a 500 response with security headers and no CORS, honoring close."""
+    return _basic_response(
+        "HTTP/1.1 500 Internal Server Error",
+        security_headers,
+        close_connection=_request_close_preference(request),
+    )
+
+
+class ErrorMapper:
+    """Dispatches domain errors to their byte-exact response builders."""
+
+    @staticmethod
+    def to_response(  # pylint: disable=too-many-return-statements
+        error: HttpError, request: Optional[HttpRequest], cors_config
+    ) -> HttpResponse:
+        """Map a domain HttpError to its corresponding HTTP response."""
+        if isinstance(error, BadRequest):
+            return bad_request_response(request, cors_config, SECURITY_HEADERS)
+        if isinstance(error, (Forbidden, ForbiddenPath)):
+            return forbidden_response(request, cors_config, SECURITY_HEADERS)
+        if isinstance(error, NotFound):
+            return not_found_response(request, cors_config, SECURITY_HEADERS)
+        if isinstance(error, MethodNotAllowed):
+            return method_not_allowed_response(
+                request, cors_config, SECURITY_HEADERS, error.allowed
+            )
+        if isinstance(error, RequestEntityTooLarge):
+            return entity_too_large_response(SECURITY_HEADERS)
+        if isinstance(error, RateLimited):
+            return rate_limited_response(error.decision, request, SECURITY_HEADERS)
+        if isinstance(error, ServiceUnavailable):
+            return draining_response(SECURITY_HEADERS)
+        return internal_error_response(request, SECURITY_HEADERS)
+
+    @staticmethod
+    def internal_error(
+        request: Optional[HttpRequest], cors_config  # pylint: disable=unused-argument
+    ) -> HttpResponse:
+        """Produce the 500 response for unexpected, non-HttpError failures."""
+        return internal_error_response(request, SECURITY_HEADERS)

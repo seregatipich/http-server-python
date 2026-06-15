@@ -6,7 +6,7 @@ from pyhttpd.application.rendering import (
     forbidden_response,
     method_not_allowed_response,
 )
-from pyhttpd.domain import HttpRequest, RequestEntityTooLarge
+from pyhttpd.domain import HttpRequest
 
 
 def enforce_allowed_method(
