@@ -26,10 +26,27 @@ where = ["src"]
 [tool.setuptools.dynamic]
 version = { attr = "pyhttpd.__version__" }
 
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
 [tool.isort]
 profile = "black"
 known_first_party = ["pyhttpd"]
 src_paths = ["src", "tests"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = ["pyhttpd.domain.*", "pyhttpd.application.*"]
+disallow_untyped_defs = true
+warn_return_any = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

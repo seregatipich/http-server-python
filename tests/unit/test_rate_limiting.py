@@ -1,10 +1,33 @@
 """Unit tests for request rate limiting middleware."""
 
-import socket
 from unittest.mock import Mock
 
-from pyhttpd.domain import HttpRequest, TokenBucketLimiter, TokenBucketSettings
-from pyhttpd.pipeline.rate_limiting import apply_rate_limit
+import pytest
+
+from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
+from pyhttpd.application.context import RequestContext
+from pyhttpd.application.middleware.rate_limit import (
+    RateLimitOutcome,
+    classify,
+    make_rate_limit_middleware,
+)
+from pyhttpd.domain import HttpRequest, RateLimited, TokenBucketSettings
+from pyhttpd.domain.ratelimit import RateLimitDecision
+
+PASSTHROUGH = object()
+
+
+def make_decision(allowed: bool, dry_run: bool) -> RateLimitDecision:
+    """Construct a rate limit decision for classification tests."""
+    return RateLimitDecision(
+        allowed=allowed,
+        limit=1,
+        remaining=0,
+        reset_seconds=1.0,
+        headers={},
+        dry_run=dry_run,
+        window_seconds=1.0,
+    )
 
 
 def make_request(headers: dict[str, str] | None = None) -> HttpRequest:
@@ -25,94 +48,62 @@ def make_limiter(dry_run: bool = False) -> TokenBucketLimiter:
     )
 
 
-def test_apply_rate_limit_no_limiter_allows_request() -> None:
-    """Missing limiter should leave request processing untouched."""
-    client_socket = Mock(spec=socket.socket)
+def run_middleware(limiter: TokenBucketLimiter, request: HttpRequest):
+    """Drive the rate-limit middleware with a sentinel terminal handler."""
+    middleware = make_rate_limit_middleware(
+        limiter, Mock(), lambda forwarded_request, ctx: "127.0.0.1"
+    )
+    ctx = RequestContext(correlation_id=None, start_ns=0)
+    response = middleware(request, ctx, lambda *_: PASSTHROUGH)
+    return response, ctx
 
-    decision, should_stop, should_close = apply_rate_limit(
-        None,
-        "127.0.0.1",
-        client_socket,
-        ("127.0.0.1", 12345),
-        make_request(),
+
+def test_classify_allowed_decision() -> None:
+    """A decision under the limit classifies as allowed."""
+    assert classify(make_decision(allowed=True, dry_run=False)) is (
+        RateLimitOutcome.ALLOWED
     )
 
-    assert decision is None
-    assert should_stop is False
-    assert should_close is False
-    client_socket.sendall.assert_not_called()
 
-
-def test_apply_rate_limit_allowed_request_returns_decision() -> None:
-    """Allowed requests should return headers and continue processing."""
-    client_socket = Mock(spec=socket.socket)
-
-    decision, should_stop, should_close = apply_rate_limit(
-        make_limiter(),
-        "127.0.0.1",
-        client_socket,
-        ("127.0.0.1", 12345),
-        make_request(),
+def test_classify_dry_run_decision() -> None:
+    """An over-limit decision in dry-run mode classifies as dry-run."""
+    assert classify(make_decision(allowed=False, dry_run=True)) is (
+        RateLimitOutcome.DRY_RUN
     )
 
-    assert decision is not None
-    assert decision.allowed is True
-    assert should_stop is False
-    assert should_close is False
-    client_socket.sendall.assert_not_called()
 
-
-def test_apply_rate_limit_enforced_sends_429() -> None:
-    """Exceeded limits should send a 429 and stop request processing."""
-    limiter = make_limiter()
-    client_socket = Mock(spec=socket.socket)
-    apply_rate_limit(
-        limiter,
-        "127.0.0.1",
-        client_socket,
-        ("127.0.0.1", 12345),
-        make_request(),
-    )
-    client_socket.reset_mock()
-
-    decision, should_stop, should_close = apply_rate_limit(
-        limiter,
-        "127.0.0.1",
-        client_socket,
-        ("127.0.0.1", 12345),
-        make_request(),
+def test_classify_enforced_decision() -> None:
+    """An over-limit decision in enforcing mode classifies as enforced."""
+    assert classify(make_decision(allowed=False, dry_run=False)) is (
+        RateLimitOutcome.ENFORCED
     )
 
-    assert decision is None
-    assert should_stop is True
-    assert should_close is False
-    payload = b"".join(call.args[0] for call in client_socket.sendall.call_args_list)
-    assert b"HTTP/1.1 429 Too Many Requests" in payload
-    assert b"Rate limit exceeded" in payload
+
+def test_rate_limit_allowed_sets_decision_and_continues() -> None:
+    """Allowed requests record the decision on the context and continue."""
+    response, ctx = run_middleware(make_limiter(), make_request())
+
+    assert response is PASSTHROUGH
+    assert ctx.rate_decision is not None
+    assert ctx.rate_decision.allowed is True
 
 
-def test_apply_rate_limit_dry_run_continues_processing() -> None:
-    """Dry-run mode should report a decision without sending a 429."""
+def test_rate_limit_dry_run_continues_processing() -> None:
+    """Dry-run mode records a decision without raising."""
     limiter = make_limiter(dry_run=True)
-    client_socket = Mock(spec=socket.socket)
-    apply_rate_limit(
-        limiter,
-        "127.0.0.1",
-        client_socket,
-        ("127.0.0.1", 12345),
-        make_request(),
-    )
+    run_middleware(limiter, make_request())
 
-    decision, should_stop, should_close = apply_rate_limit(
-        limiter,
-        "127.0.0.1",
-        client_socket,
-        ("127.0.0.1", 12345),
-        make_request(),
-    )
+    response, ctx = run_middleware(limiter, make_request())
 
-    assert decision is not None
-    assert decision.dry_run is True
-    assert should_stop is False
-    assert should_close is False
-    client_socket.sendall.assert_not_called()
+    assert response is PASSTHROUGH
+    assert ctx.rate_decision is not None
+    assert ctx.rate_decision.dry_run is True
+
+
+def test_rate_limit_enforced_raises() -> None:
+    """Exceeded limits raise RateLimited and stop processing."""
+    limiter = make_limiter()
+    run_middleware(limiter, make_request())
+
+    with pytest.raises(RateLimited):
+        run_middleware(limiter, make_request())

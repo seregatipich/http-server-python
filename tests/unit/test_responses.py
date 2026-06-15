@@ -2,9 +2,12 @@
 
 import gzip
 from pathlib import Path
+from unittest.mock import Mock
 
-from pyhttpd.domain import HttpRequest
-from pyhttpd.pipeline import route_request
+from pyhttpd.application.context import RequestContext
+from pyhttpd.application.rendering import ErrorMapper
+from pyhttpd.application.routing import make_default_router
+from pyhttpd.domain import HttpError, HttpRequest
 
 
 def make_request(
@@ -17,6 +20,17 @@ def make_request(
     """Create a request targeted at the main server entry point."""
 
     return HttpRequest(method, path, headers or {}, body)
+
+
+def route_request(request: HttpRequest, directory: str):
+    """Dispatch through the default router, mapping domain errors to responses."""
+
+    router = make_default_router(directory, None, Mock())
+    ctx = RequestContext(correlation_id=None, start_ns=0)
+    try:
+        return router.dispatch(request, ctx)
+    except HttpError as error:
+        return ErrorMapper.to_response(error, request, None)
 
 
 def test_build_response_root_returns_empty_response_when_missing_document(

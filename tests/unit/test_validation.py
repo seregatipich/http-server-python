@@ -2,20 +2,28 @@
 
 import pytest
 
-from pyhttpd.bootstrap import MAX_BODY_BYTES
+from pyhttpd.adapters.config.cli_args import MAX_BODY_BYTES
+from pyhttpd.application.context import RequestContext
+from pyhttpd.application.middleware.cors import (
+    apply_cors_headers,
+    determine_allowed_origin,
+    is_preflight_request,
+    preflight_response,
+)
+from pyhttpd.application.middleware.validation import make_validation_middleware
+from pyhttpd.application.rendering import ErrorMapper
 from pyhttpd.domain import (
     ALLOWED_METHODS,
     CorsConfig,
     ForbiddenPath,
     HttpRequest,
-    apply_cors_headers,
-    determine_allowed_origin,
-    entity_too_large_response,
-    is_preflight_request,
-    preflight_response,
     resolve_sandbox_path,
 )
-from pyhttpd.pipeline import validate_request
+from pyhttpd.domain.errors import (
+    BadRequest,
+    MethodNotAllowed,
+    RequestEntityTooLarge,
+)
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
@@ -34,11 +42,14 @@ def make_request(
     return HttpRequest(method, path, headers or {}, body)
 
 
-def validate_test_request(request: HttpRequest):
-    """Helper to call validate_request with test defaults."""
-    return validate_request(
-        request, ALLOWED_METHODS, MAX_BODY_BYTES, None, SECURITY_HEADERS
-    )
+PASSTHROUGH = object()
+
+
+def run_validation(request: HttpRequest):
+    """Drive the validation middleware with a sentinel terminal handler."""
+    middleware = make_validation_middleware(ALLOWED_METHODS, MAX_BODY_BYTES)
+    ctx = RequestContext(correlation_id=None, start_ns=0)
+    return middleware(request, ctx, lambda *_: PASSTHROUGH)
 
 
 def make_cors_config(**overrides) -> CorsConfig:
@@ -58,26 +69,23 @@ def make_cors_config(**overrides) -> CorsConfig:
 def test_validate_request_allows_whitelisted_methods():
     """Allow GET on the root path."""
     request = make_request("/")
-    assert validate_test_request(request) is None
+    assert run_validation(request) is PASSTHROUGH
 
 
 def test_validate_request_rejects_unknown_method():
     """Reject methods outside the allowlist."""
     request = make_request("/", method="DELETE")
-    response = validate_test_request(request)
-    assert response is not None
-    assert response.status_line == "HTTP/1.1 405 Method Not Allowed"
-    allow_header = response.headers.get("Allow", "")
+    with pytest.raises(MethodNotAllowed) as exc_info:
+        run_validation(request)
     for method in ALLOWED_METHODS:
-        assert method in allow_header
+        assert method in exc_info.value.allowed
 
 
 def test_validate_request_requires_content_length_for_post():
     """Reject POST requests missing a Content-Length header."""
     request = make_request("/files/name", method="POST", headers={}, body=b"data")
-    response = validate_test_request(request)
-    assert response is not None
-    assert response.status_line == "HTTP/1.1 400 Bad Request"
+    with pytest.raises(BadRequest):
+        run_validation(request)
 
 
 def test_validate_request_rejects_length_mismatch():
@@ -88,9 +96,8 @@ def test_validate_request_rejects_length_mismatch():
         headers={"content-length": "4"},
         body=b"x",
     )
-    response = validate_test_request(request)
-    assert response is not None
-    assert response.status_line == "HTTP/1.1 400 Bad Request"
+    with pytest.raises(BadRequest):
+        run_validation(request)
 
 
 def test_validate_request_rejects_oversized_body():
@@ -102,11 +109,8 @@ def test_validate_request_rejects_oversized_body():
         headers={"content-length": str(len(payload))},
         body=payload,
     )
-    response = validate_test_request(request)
-    assert response is not None
-    assert (
-        response.status_line == entity_too_large_response(SECURITY_HEADERS).status_line
-    )
+    with pytest.raises(RequestEntityTooLarge):
+        run_validation(request)
 
 
 def test_resolve_sandbox_path_accepts_nested_file(tmp_path):
@@ -136,13 +140,13 @@ def test_resolve_sandbox_path_blocks_empty_path(tmp_path):
 def test_validate_request_allows_options_method():
     """Allow OPTIONS method without POST constraints."""
     request = make_request("/", method="OPTIONS")
-    assert validate_test_request(request) is None
+    assert run_validation(request) is PASSTHROUGH
 
 
 def test_validate_request_options_without_content_length():
     """Allow OPTIONS requests without Content-Length header."""
     request = make_request("/files/name", method="OPTIONS", headers={})
-    assert validate_test_request(request) is None
+    assert run_validation(request) is PASSTHROUGH
 
 
 def test_is_preflight_request_detects_preflight():
@@ -335,10 +339,10 @@ def test_validate_request_oversized_post_with_origin():
         body=payload,
     )
 
-    response = validate_request(
-        request, ALLOWED_METHODS, MAX_BODY_BYTES, cors_config, SECURITY_HEADERS
-    )
-    assert response is not None
+    with pytest.raises(RequestEntityTooLarge) as exc_info:
+        run_validation(request)
+
+    response = ErrorMapper.to_response(exc_info.value, request, cors_config)
     assert response.status_line == "HTTP/1.1 413 Payload Too Large"
     assert "Access-Control-Allow-Origin" not in response.headers
 
@@ -348,4 +352,4 @@ def test_options_request_missing_preflight_header_returns_none():
     request = make_request(
         "/", method="OPTIONS", headers={"origin": "https://example.com"}
     )
-    assert validate_test_request(request) is None
+    assert run_validation(request) is PASSTHROUGH

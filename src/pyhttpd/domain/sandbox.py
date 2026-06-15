@@ -2,9 +2,7 @@
 
 from pathlib import Path
 
-
-class ForbiddenPath(Exception):
-    """Raised when a requested path escapes the configured sandbox."""
+from pyhttpd.domain.errors import ForbiddenPath
 
 
 def resolve_sandbox_path(directory: str, user_path: str) -> Path:

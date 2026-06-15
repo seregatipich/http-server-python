@@ -1,6 +1,6 @@
 """Unit tests for sensitive data redaction."""
 
-from pyhttpd.bootstrap import redact_sensitive
+from pyhttpd.adapters.logging.redaction import redact_sensitive
 
 
 def test_redact_authorization_header():

@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pyhttpd.bootstrap import CorrelationIdFilter, configure_logging
+from pyhttpd.adapters.logging.setup import CorrelationIdFilter, configure_logging
 
 
 def test_configure_logging_stream_handler(monkeypatch):
@@ -78,7 +78,7 @@ def test_correlation_id_filter_inserts_placeholder_when_missing():
 def test_configure_logging_emits_event():
     """Test that configure_logging emits a 'logging_configured' event."""
 
-    with patch("pyhttpd.bootstrap.logging_setup._build_handler") as mock_build:
+    with patch("pyhttpd.adapters.logging.setup._build_handler") as mock_build:
         mock_handler = MagicMock()
         mock_handler.level = logging.INFO  # Fix comparison error
         mock_build.return_value = mock_handler
