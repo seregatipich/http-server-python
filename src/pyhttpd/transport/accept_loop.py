@@ -6,12 +6,12 @@ import socket
 import threading
 from typing import Optional
 
+from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
 from pyhttpd.bootstrap import ServerConfig, create_server_socket
 from pyhttpd.domain import (
     SECURITY_HEADERS,
     CorsConfig,
     LifecycleState,
-    TokenBucketLimiter,
     TokenBucketSettings,
     connection_limited_response,
     draining_response,

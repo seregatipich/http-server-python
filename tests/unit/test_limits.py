@@ -1,6 +1,7 @@
 """Unit tests for connection and rate limiting helpers."""
 
-from pyhttpd.domain import TokenBucketLimiter, TokenBucketSettings
+from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
+from pyhttpd.domain import TokenBucketSettings
 from pyhttpd.transport import ConnectionLimiter
 
 

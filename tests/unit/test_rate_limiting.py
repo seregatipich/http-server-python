@@ -3,7 +3,8 @@
 import socket
 from unittest.mock import Mock
 
-from pyhttpd.domain import HttpRequest, TokenBucketLimiter, TokenBucketSettings
+from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
+from pyhttpd.domain import HttpRequest, TokenBucketSettings
 from pyhttpd.pipeline.rate_limiting import apply_rate_limit
 
 

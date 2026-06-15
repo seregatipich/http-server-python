@@ -3,8 +3,8 @@
 import logging
 from typing import Optional
 
+from pyhttpd.adapters.logging.correlation_adapter import CorrelationLoggerAdapter
 from pyhttpd.domain import (
-    CorrelationLoggerAdapter,
     CorsConfig,
     HttpRequest,
     HttpResponse,

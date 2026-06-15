@@ -5,8 +5,8 @@ import mimetypes
 from pathlib import Path
 from typing import Iterator
 
+from pyhttpd.adapters.logging.correlation_adapter import CorrelationLoggerAdapter
 from pyhttpd.domain import (
-    CorrelationLoggerAdapter,
     ForbiddenPath,
     HttpRequest,
     HttpResponse,

@@ -5,17 +5,19 @@ import socket
 import urllib.parse
 from typing import Optional, Tuple
 
+from pyhttpd.adapters.logging.correlation_adapter import (
+    CorrelationLoggerAdapter,
+    get_correlation_id,
+    set_correlation_id,
+)
 from pyhttpd.domain import (
     DEFAULT_MAX_BODY_BYTES,
     FILES_ENDPOINT_PREFIX,
     HEADER_DELIMITER,
-    CorrelationLoggerAdapter,
     ForbiddenPath,
     HttpRequest,
     HttpResponse,
     RequestEntityTooLarge,
-    get_correlation_id,
-    set_correlation_id,
 )
 
 IO_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.io"), {})

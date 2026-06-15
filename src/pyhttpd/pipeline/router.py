@@ -4,10 +4,10 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
+from pyhttpd.adapters.logging.correlation_adapter import CorrelationLoggerAdapter
 from pyhttpd.domain import (
     FILES_ENDPOINT_PREFIX,
     SECURITY_HEADERS,
-    CorrelationLoggerAdapter,
     CorsConfig,
     HttpRequest,
     HttpResponse,
