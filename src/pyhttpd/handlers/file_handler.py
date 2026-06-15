@@ -6,15 +6,17 @@ from pathlib import Path
 from typing import Iterator
 
 from pyhttpd.adapters.logging.correlation_adapter import CorrelationLoggerAdapter
-from pyhttpd.domain import (
-    ForbiddenPath,
-    HttpRequest,
-    HttpResponse,
-    apply_cors_headers,
+from pyhttpd.application.middleware.cors import apply_cors_headers
+from pyhttpd.application.rendering import (
     empty_response,
     forbidden_response,
     method_not_allowed_response,
     not_found_response,
+)
+from pyhttpd.domain import (
+    ForbiddenPath,
+    HttpRequest,
+    HttpResponse,
     resolve_sandbox_path,
     should_close,
 )

@@ -4,14 +4,8 @@ import logging
 from typing import Optional
 
 from pyhttpd.adapters.logging.correlation_adapter import CorrelationLoggerAdapter
-from pyhttpd.domain import (
-    CorsConfig,
-    HttpRequest,
-    HttpResponse,
-    LifecycleState,
-    healthz_response,
-    text_response,
-)
+from pyhttpd.application.rendering import healthz_response, text_response
+from pyhttpd.domain import CorsConfig, HttpRequest, HttpResponse, LifecycleState
 
 SYSTEM_LOGGER = CorrelationLoggerAdapter(
     logging.getLogger("http_server.handlers.system"), {}

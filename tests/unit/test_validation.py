@@ -2,17 +2,19 @@
 
 import pytest
 
+from pyhttpd.application.middleware.cors import (
+    apply_cors_headers,
+    determine_allowed_origin,
+    is_preflight_request,
+    preflight_response,
+)
+from pyhttpd.application.rendering import entity_too_large_response
 from pyhttpd.bootstrap import MAX_BODY_BYTES
 from pyhttpd.domain import (
     ALLOWED_METHODS,
     CorsConfig,
     ForbiddenPath,
     HttpRequest,
-    apply_cors_headers,
-    determine_allowed_origin,
-    entity_too_large_response,
-    is_preflight_request,
-    preflight_response,
     resolve_sandbox_path,
 )
 from pyhttpd.pipeline import validate_request

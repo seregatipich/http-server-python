@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from pyhttpd.adapters.logging.correlation_adapter import CorrelationLoggerAdapter
+from pyhttpd.application.rendering import forbidden_response, not_found_response
 from pyhttpd.domain import (
     FILES_ENDPOINT_PREFIX,
     SECURITY_HEADERS,
@@ -12,8 +13,6 @@ from pyhttpd.domain import (
     HttpRequest,
     HttpResponse,
     LifecycleState,
-    forbidden_response,
-    not_found_response,
 )
 from pyhttpd.handlers import (
     file_response,
