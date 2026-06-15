@@ -1,5 +1,5 @@
-"""Public lifecycle API."""
+"""Backward-compatibility shim; ServerLifecycle now lives in adapters."""
 
-from pyhttpd.lifecycle.state import ServerLifecycle
+from pyhttpd.adapters.lifecycle import ServerLifecycle
 
 __all__ = ["ServerLifecycle"]
