@@ -39,3 +39,4 @@ Thumbs.db
 .pytest_cache/
 ai_docs/
 certs/
+.sentrux/
