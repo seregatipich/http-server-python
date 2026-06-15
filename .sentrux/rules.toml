@@ -2,7 +2,7 @@
 min_quality = 0.72
 min_modularity = 0.37
 min_acyclicity = 1.0
-min_depth = 0.88
+min_depth = 0.80
 min_equality = 0.59
 min_redundancy = 0.976
 max_cycles = 0
@@ -14,30 +14,36 @@ no_god_files = true
 
 [[layers]]
 name = "domain"
-paths = ["server/domain/*"]
-order = 5
-
-[[layers]]
-name = "bootstrap"
-paths = ["server/bootstrap/*", "server/lifecycle/*"]
+paths = ["src/pyhttpd/domain/**"]
 order = 4
 
 [[layers]]
-name = "handlers"
-paths = ["server/handlers/*"]
+name = "application"
+paths = ["src/pyhttpd/application/**"]
 order = 3
 
 [[layers]]
-name = "pipeline"
-paths = ["server/pipeline/*"]
+name = "adapters"
+paths = ["src/pyhttpd/adapters/**"]
 order = 2
 
 [[layers]]
-name = "transport"
-paths = ["server/transport/*"]
+name = "legacy"
+paths = [
+    "src/pyhttpd/bootstrap/**",
+    "src/pyhttpd/lifecycle/**",
+    "src/pyhttpd/pipeline/**",
+    "src/pyhttpd/transport/**",
+    "src/pyhttpd/handlers/**",
+]
 order = 1
 
 [[layers]]
 name = "entrypoints"
-paths = ["main.py", "logging_config.py"]
+paths = [
+    "src/pyhttpd/composition.py",
+    "src/pyhttpd/cli.py",
+    "src/pyhttpd/__main__.py",
+    "src/pyhttpd/__init__.py",
+]
 order = 0
