@@ -13,6 +13,8 @@ from pyhttpd.adapters.logging.correlation_adapter import (
     generate_correlation_id,
     set_correlation_id,
 )
+from pyhttpd.adapters.transport.context import WorkerContext
+from pyhttpd.adapters.transport.wire import format_client_address
 from pyhttpd.domain import (
     ALLOWED_METHODS,
     DEFAULT_MAX_BODY_BYTES,
@@ -25,7 +27,6 @@ from pyhttpd.domain import (
     draining_response,
     entity_too_large_response,
     forbidden_response,
-    format_client_address,
     is_preflight_request,
     preflight_response,
 )
@@ -36,7 +37,6 @@ from pyhttpd.pipeline import (
     send_response,
     validate_request,
 )
-from pyhttpd.transport.context import WorkerContext
 
 WORKER_LOGGER = CorrelationLoggerAdapter(
     logging.getLogger("http_server.transport.worker"), {}

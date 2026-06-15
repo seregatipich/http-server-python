@@ -6,10 +6,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
+from pyhttpd.adapters.transport.server import run_server
 from pyhttpd.bootstrap import ServerConfig
 from pyhttpd.domain import RequestEntityTooLarge
 from pyhttpd.lifecycle import ServerLifecycle
-from pyhttpd.transport import WorkerContext, handle_client, run_server
+from pyhttpd.transport import WorkerContext, handle_client
 
 
 @pytest.fixture(name="mock_socket")
@@ -65,16 +67,25 @@ def test_accept_loop_logs_server_listening(
     """Verify server_listening event is logged."""
     caplog.set_level(logging.INFO)
 
-    with patch("pyhttpd.transport.accept_loop.create_server_socket") as mock_create:
-        mock_server_sock = MagicMock()
-        mock_server_sock.accept.side_effect = OSError("Stop loop")  # Break loop
-        mock_create.return_value = mock_server_sock
+    server_socket = MagicMock()
+    server_socket.accept.side_effect = OSError("Stop loop")  # Break loop
+    connection_limiter = ConnectionLimiter(
+        mock_args.max_connections, mock_args.max_connections_per_ip
+    )
+    handler_context = WorkerContext(directory=mock_args.directory)
 
-        # We anticipate OSError log, so we filter for listening event specifically
-        try:
-            run_server(mock_args, mock_config, mock_lifecycle)
-        except OSError:
-            pass
+    # We anticipate OSError log, so we filter for listening event specifically
+    try:
+        run_server(
+            server_socket,
+            mock_args,
+            mock_config,
+            mock_lifecycle,
+            handler_context,
+            connection_limiter,
+        )
+    except OSError:
+        pass
 
     listening_record = next(
         (r for r in caplog.records if getattr(r, "event", None) == "server_listening"),
@@ -94,24 +105,31 @@ def test_accept_loop_logs_client_accepted(
     # Enable DEBUG logging for the specific logger
     logging.getLogger("http_server.transport.accept").setLevel(logging.DEBUG)
 
-    with (
-        patch("pyhttpd.transport.accept_loop.create_server_socket") as mock_create,
-        patch("threading.Thread"),
-    ):
-        mock_server_sock = MagicMock()
+    with patch("threading.Thread"):
+        server_socket = MagicMock()
         # Accept one client, then raise OSError to break loop
         client_sock = MagicMock()
-        mock_server_sock.accept.side_effect = [
+        server_socket.accept.side_effect = [
             (client_sock, ("127.0.0.1", 12345)),
             OSError("Stop loop"),
         ]
-        mock_create.return_value = mock_server_sock
+        connection_limiter = ConnectionLimiter(
+            mock_args.max_connections, mock_args.max_connections_per_ip
+        )
+        handler_context = WorkerContext(directory=mock_args.directory)
 
         # Ensure loop breaks on error by overriding side_effect
         mock_lifecycle.should_stop.side_effect = None
         mock_lifecycle.should_stop.return_value = True
 
-        run_server(mock_args, mock_config, mock_lifecycle)
+        run_server(
+            server_socket,
+            mock_args,
+            mock_config,
+            mock_lifecycle,
+            handler_context,
+            connection_limiter,
+        )
 
     accepted_record = next(
         (r for r in caplog.records if getattr(r, "event", None) == "client_accepted"),
@@ -176,7 +194,7 @@ def test_worker_logs_body_size_exceeded(caplog):
     client_sock = MagicMock()
 
     # Patch the function where it is USED (in worker.py namespace)
-    with patch("pyhttpd.transport.worker.receive_request") as mock_recv:
+    with patch("pyhttpd.adapters.transport.worker.receive_request") as mock_recv:
         mock_recv.side_effect = RequestEntityTooLarge("Too big")
 
         context = MagicMock(spec=WorkerContext)

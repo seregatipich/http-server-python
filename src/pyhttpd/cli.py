@@ -5,8 +5,8 @@ import signal
 import sys
 
 from pyhttpd.bootstrap import ServerConfig, configure_logging, parse_cli_args
+from pyhttpd.composition import build_server
 from pyhttpd.lifecycle import ServerLifecycle
-from pyhttpd.transport import run_server
 
 MAIN_LOGGER = logging.getLogger("http_server.main")
 
@@ -46,4 +46,4 @@ def main() -> None:
             "shutdown_grace_seconds": config.shutdown_grace_seconds,
         },
     )
-    run_server(args, config, lifecycle)
+    build_server(args, config, lifecycle).serve()

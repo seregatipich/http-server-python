@@ -4,59 +4,21 @@ import argparse
 import logging
 import socket
 import threading
-from typing import Optional
 
-from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
-from pyhttpd.bootstrap import ServerConfig, create_server_socket
+from pyhttpd.adapters.config.cli_args import ServerConfig
+from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
+from pyhttpd.adapters.transport.context import WorkerContext
+from pyhttpd.adapters.transport.wire import format_client_address
+from pyhttpd.adapters.transport.worker import handle_client
 from pyhttpd.domain import (
     SECURITY_HEADERS,
-    CorsConfig,
     LifecycleState,
-    TokenBucketSettings,
     connection_limited_response,
     draining_response,
-    format_client_address,
 )
 from pyhttpd.pipeline import send_response
-from pyhttpd.transport.connection_limiter import ConnectionLimiter
-from pyhttpd.transport.context import WorkerContext
-from pyhttpd.transport.worker import handle_client
 
 ACCEPT_LOGGER = logging.getLogger("http_server.transport.accept")
-
-
-def _create_cors_config(args: argparse.Namespace) -> CorsConfig:
-    """Create CORS configuration from CLI arguments."""
-    return CorsConfig(
-        allowed_origins=[
-            o.strip() for o in args.cors_allowed_origins.split(",") if o.strip()
-        ],
-        allowed_methods=[
-            m.strip() for m in args.cors_allowed_methods.split(",") if m.strip()
-        ],
-        allowed_headers=[
-            h.strip() for h in args.cors_allowed_headers.split(",") if h.strip()
-        ],
-        expose_headers=[
-            h.strip() for h in args.cors_expose_headers.split(",") if h.strip()
-        ],
-        allow_credentials=args.cors_allow_credentials,
-        max_age=args.cors_max_age,
-    )
-
-
-def _create_rate_limiter(args: argparse.Namespace) -> Optional[TokenBucketLimiter]:
-    """Create rate limiter if configured."""
-    if args.rate_limit > 0 and args.rate_window_ms > 0:
-        return TokenBucketLimiter(
-            TokenBucketSettings(
-                rate_limit=args.rate_limit,
-                window_ms=args.rate_window_ms,
-                burst_capacity=args.burst_capacity,
-                dry_run=args.rate_limit_dry_run,
-            )
-        )
-    return None
 
 
 def _handle_accepted_client(
@@ -101,22 +63,6 @@ def _handle_accepted_client(
         daemon=False,
     )
     thread.start()
-
-
-def _create_worker_context(
-    args: argparse.Namespace,
-    config: ServerConfig,
-    lifecycle: LifecycleState,
-    connection_limiter: ConnectionLimiter,
-) -> WorkerContext:
-    return WorkerContext(
-        directory=args.directory,
-        connection_limiter=connection_limiter,
-        rate_limiter=_create_rate_limiter(args),
-        lifecycle=lifecycle,
-        config=config,
-        cors_config=_create_cors_config(args),
-    )
 
 
 def _accept_client(server_socket: socket.socket, lifecycle: LifecycleState):
@@ -184,11 +130,14 @@ def _finish_shutdown(
 
 
 def run_server(
-    args: argparse.Namespace, config: ServerConfig, lifecycle: LifecycleState
+    server_socket: socket.socket,
+    args: argparse.Namespace,
+    config: ServerConfig,
+    lifecycle: LifecycleState,
+    handler_context: WorkerContext,
+    connection_limiter: ConnectionLimiter,
 ) -> None:
-    """Create listening socket and handle client lifecycle."""
-
-    server_socket = create_server_socket(args)
+    """Serve client connections on the supplied listening socket."""
 
     ACCEPT_LOGGER.info(
         "Server listening for connections",
@@ -198,14 +147,6 @@ def run_server(
             "port": args.port,
             "tls": bool(args.cert and args.key),
         },
-    )
-
-    connection_limiter = ConnectionLimiter(
-        args.max_connections,
-        args.max_connections_per_ip,
-    )
-    handler_context = _create_worker_context(
-        args, config, lifecycle, connection_limiter
     )
 
     try:

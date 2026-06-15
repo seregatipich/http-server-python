@@ -8,13 +8,7 @@ from pyhttpd.domain.config import (
     CorsConfig,
 )
 from pyhttpd.domain.errors import ForbiddenPath, RequestEntityTooLarge
-from pyhttpd.domain.http import (
-    HEADER_DELIMITER,
-    HttpRequest,
-    HttpResponse,
-    format_client_address,
-    should_close,
-)
+from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
 from pyhttpd.domain.ports import DrainingState
 from pyhttpd.domain.ratelimit import RateLimitDecision, TokenBucketSettings
 from pyhttpd.domain.response_builders import (
@@ -44,7 +38,6 @@ __all__ = [
     "ALLOWED_METHODS",
     "DEFAULT_MAX_BODY_BYTES",
     "FILES_ENDPOINT_PREFIX",
-    "HEADER_DELIMITER",
     "SECURITY_HEADERS",
     "CorsConfig",
     "ForbiddenPath",
@@ -63,7 +56,6 @@ __all__ = [
     "draining_response",
     "empty_response",
     "entity_too_large_response",
-    "format_client_address",
     "forbidden_response",
     "healthz_response",
     "is_preflight_request",

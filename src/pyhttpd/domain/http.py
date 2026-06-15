@@ -3,8 +3,6 @@
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-HEADER_DELIMITER = b"\r\n\r\n"
-
 
 @dataclass
 class HttpRequest:
@@ -31,8 +29,3 @@ class HttpResponse:
 def should_close(headers: dict[str, str]) -> bool:
     """Determine whether the connection should be closed after responding."""
     return headers.get("connection", "").lower() == "close"
-
-
-def format_client_address(client_address: tuple[str, int]) -> str:
-    """Return a stable host:port string for logs."""
-    return f"{client_address[0]}:{client_address[1]}"

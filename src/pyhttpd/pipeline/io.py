@@ -10,10 +10,10 @@ from pyhttpd.adapters.logging.correlation_adapter import (
     get_correlation_id,
     set_correlation_id,
 )
+from pyhttpd.adapters.transport.wire import HEADER_DELIMITER
 from pyhttpd.domain import (
     DEFAULT_MAX_BODY_BYTES,
     FILES_ENDPOINT_PREFIX,
-    HEADER_DELIMITER,
     ForbiddenPath,
     HttpRequest,
     HttpResponse,
