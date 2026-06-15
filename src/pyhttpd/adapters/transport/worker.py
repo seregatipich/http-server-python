@@ -15,6 +15,7 @@ from pyhttpd.adapters.logging.correlation_adapter import (
     set_correlation_id,
 )
 from pyhttpd.adapters.transport.context import WorkerContext
+from pyhttpd.adapters.transport.io import receive_request, send_response
 from pyhttpd.adapters.transport.wire import format_client_address
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.middleware.cors import make_cors_middleware
@@ -40,7 +41,6 @@ from pyhttpd.domain import (
     RequestEntityTooLarge,
     should_close,
 )
-from pyhttpd.pipeline import receive_request, send_response
 
 WORKER_LOGGER = CorrelationLoggerAdapter(
     logging.getLogger("http_server.transport.worker"), {}

@@ -1,16 +1,22 @@
 """Composition root wiring transport collaborators across layers."""
 
 import argparse
+import logging
+import signal
 from dataclasses import dataclass
 from typing import Optional
 
 from pyhttpd.adapters.config.cli_args import ServerConfig
+from pyhttpd.adapters.lifecycle import ServerLifecycle
+from pyhttpd.adapters.logging.setup import configure_logging
 from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
 from pyhttpd.adapters.tls import create_server_socket
 from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
 from pyhttpd.adapters.transport.context import WorkerContext
 from pyhttpd.adapters.transport.server import run_server
 from pyhttpd.domain import CorsConfig, LifecycleState, TokenBucketSettings
+
+MAIN_LOGGER = logging.getLogger("http_server.main")
 
 
 def _create_cors_config(args: argparse.Namespace) -> CorsConfig:
@@ -86,10 +92,41 @@ class Server:
         )
 
 
-def build_server(
-    args: argparse.Namespace, config: ServerConfig, lifecycle: LifecycleState
-) -> Server:
-    """Build and wire the server and its transport collaborators."""
+def build_server(args: argparse.Namespace) -> Server:
+    """Configure runtime, register signals, and wire the server collaborators."""
+    configure_logging(args.log_level, args.log_destination)
+
+    config = ServerConfig(
+        socket_timeout=args.socket_timeout,
+        shutdown_grace_seconds=args.shutdown_grace_seconds,
+    )
+    lifecycle = ServerLifecycle()
+
+    def shutdown_handler(signum: int, _frame) -> None:
+        MAIN_LOGGER.info(
+            "Shutdown signal received",
+            extra={"event": "shutdown_signal_received", "signal": signum},
+        )
+        lifecycle.begin_draining()
+
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+    MAIN_LOGGER.info(
+        "HTTP server starting",
+        extra={
+            "event": "server_starting",
+            "host": args.host,
+            "port": args.port,
+            "directory": args.directory,
+            "log_destination": args.log_destination,
+            "log_level": args.log_level,
+            "tls": bool(args.cert and args.key),
+            "socket_timeout": config.socket_timeout,
+            "shutdown_grace_seconds": config.shutdown_grace_seconds,
+        },
+    )
+
     server_socket = create_server_socket(args)
     connection_limiter = ConnectionLimiter(
         args.max_connections,

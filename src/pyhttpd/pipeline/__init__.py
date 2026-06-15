@@ -1,6 +1,6 @@
 """Public request pipeline API."""
 
-from pyhttpd.pipeline.io import (
+from pyhttpd.adapters.transport.io import (
     determine_content_length,
     parse_headers,
     parse_request_line,

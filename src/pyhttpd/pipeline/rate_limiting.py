@@ -6,10 +6,10 @@ from typing import Optional
 
 from pyhttpd.adapters.logging.correlation_adapter import CorrelationLoggerAdapter
 from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
+from pyhttpd.adapters.transport.io import send_response
 from pyhttpd.adapters.transport.wire import format_client_address
 from pyhttpd.application.rendering import rate_limited_response
 from pyhttpd.domain import SECURITY_HEADERS, HttpRequest, RateLimitDecision
-from pyhttpd.pipeline.io import send_response
 
 LIMITER_LOGGER = CorrelationLoggerAdapter(
     logging.getLogger("http_server.pipeline.rate_limiting"), {}

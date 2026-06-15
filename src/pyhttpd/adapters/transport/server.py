@@ -8,6 +8,7 @@ import threading
 from pyhttpd.adapters.config.cli_args import ServerConfig
 from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
 from pyhttpd.adapters.transport.context import WorkerContext
+from pyhttpd.adapters.transport.io import send_response
 from pyhttpd.adapters.transport.wire import format_client_address
 from pyhttpd.adapters.transport.worker import handle_client
 from pyhttpd.application.rendering import (
@@ -15,7 +16,6 @@ from pyhttpd.application.rendering import (
     draining_response,
 )
 from pyhttpd.domain import SECURITY_HEADERS, LifecycleState
-from pyhttpd.pipeline import send_response
 
 ACCEPT_LOGGER = logging.getLogger("http_server.transport.accept")
 
