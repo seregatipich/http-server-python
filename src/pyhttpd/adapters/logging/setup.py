@@ -1,36 +1,18 @@
 """Logging configuration utilities for the HTTP server."""
 
-import json
 import logging
-import re
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
+
+from pyhttpd.adapters.logging.json_formatter import JsonFormatter
 
 LOGGER_NAME = "http_server"
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(correlation_id)s] %(name)s :: %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 MAX_BYTES = 10 * 1024 * 1024
 BACKUP_COUNT = 5
-
-SENSITIVE_PATTERNS = [
-    re.compile(r"(?i)(authorization|token|key|signature|password|secret|api[_-]?key)"),
-    re.compile(r"\b[A-Fa-f0-9]{32,}\b"),
-    re.compile(r"\b[A-Za-z0-9+/]{32,}={0,2}\b"),
-]
-
-
-def redact_sensitive(value: str) -> str:
-    """Redact sensitive data from log values."""
-    if not value:
-        return value
-
-    for pattern in SENSITIVE_PATTERNS:
-        if pattern.search(value):
-            return "[REDACTED]"
-
-    return value
 
 
 class CorrelationIdFilter(logging.Filter):  # pylint: disable=too-few-public-methods
@@ -40,64 +22,6 @@ class CorrelationIdFilter(logging.Filter):  # pylint: disable=too-few-public-met
         if not hasattr(record, "correlation_id"):
             record.correlation_id = "-"
         return True
-
-
-class JsonFormatter(logging.Formatter):
-    """JSON formatter with stable key ordering for structured logging."""
-
-    def __init__(self, datefmt: Optional[str] = None):
-        """Initialize JSON formatter with optional date format."""
-        super().__init__(datefmt=datefmt)
-
-    def format(self, record: logging.LogRecord) -> str:
-        """Format log record as JSON with stable key ordering."""
-        log_data = {
-            "timestamp": self.formatTime(record, self.datefmt),
-            "level": record.levelname,
-            "correlation_id": getattr(record, "correlation_id", "-"),
-            "component": getattr(record, "component", "unknown"),
-            "message": record.getMessage(),
-        }
-
-        if hasattr(record, "event"):
-            log_data["event"] = record.event
-
-        extra_keys = [
-            "client",
-            "connection_id",
-            "route",
-            "status_code",
-            "limit_type",
-            "window_seconds",
-            "remaining_tokens",
-            "bytes_in",
-            "bytes_out",
-            "duration_ms",
-            "error_type",
-            "errno",
-            "rate_limit_headers",
-            "host",
-            "port",
-            "directory",
-            "log_destination",
-            "log_level",
-            "tls",
-            "socket_timeout",
-            "shutdown_grace_seconds",
-            "signal",
-        ]
-
-        for key in extra_keys:
-            if hasattr(record, key):
-                value = getattr(record, key)
-                if isinstance(value, str):
-                    value = redact_sensitive(value)
-                log_data[key] = value
-
-        if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
-
-        return json.dumps(log_data, sort_keys=True)
 
 
 def _resolve_level(level_name: str) -> int:

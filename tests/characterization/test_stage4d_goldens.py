@@ -6,10 +6,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pyhttpd.adapters.transport.context import WorkerContext
+from pyhttpd.adapters.transport.worker import handle_client
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.handlers.files import make_index_handler
 from pyhttpd.domain import Forbidden, ForbiddenPath, HttpRequest
-from pyhttpd.transport import WorkerContext, handle_client
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",

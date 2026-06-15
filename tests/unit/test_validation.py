@@ -2,6 +2,7 @@
 
 import pytest
 
+from pyhttpd.adapters.config.cli_args import MAX_BODY_BYTES
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.middleware.cors import (
     apply_cors_headers,
@@ -11,7 +12,6 @@ from pyhttpd.application.middleware.cors import (
 )
 from pyhttpd.application.middleware.validation import make_validation_middleware
 from pyhttpd.application.rendering import ErrorMapper
-from pyhttpd.bootstrap import MAX_BODY_BYTES
 from pyhttpd.domain import (
     ALLOWED_METHODS,
     CorsConfig,

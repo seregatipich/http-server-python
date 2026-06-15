@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from pyhttpd.bootstrap import CorrelationIdFilter, configure_logging
+from pyhttpd.adapters.logging.setup import CorrelationIdFilter, configure_logging
 
 
 def test_configure_logging_stream_handler(monkeypatch):

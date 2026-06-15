@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from pyhttpd.bootstrap import JsonFormatter
+from pyhttpd.adapters.logging.json_formatter import JsonFormatter
 
 
 @pytest.fixture(name="json_formatter")

@@ -6,12 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pyhttpd.adapters.config.cli_args import ServerConfig
+from pyhttpd.adapters.lifecycle import ServerLifecycle
 from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
+from pyhttpd.adapters.transport.context import WorkerContext
 from pyhttpd.adapters.transport.server import run_server
-from pyhttpd.bootstrap import ServerConfig
+from pyhttpd.adapters.transport.worker import handle_client
 from pyhttpd.domain import RequestEntityTooLarge
-from pyhttpd.lifecycle import ServerLifecycle
-from pyhttpd.transport import WorkerContext, handle_client
 
 
 @pytest.fixture(name="mock_socket")
