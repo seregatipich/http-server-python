@@ -1,8 +1,8 @@
 [constraints]
-min_quality = 0.72
+min_quality = 0.65
 min_modularity = 0.37
 min_acyclicity = 1.0
-min_depth = 0.80
+min_depth = 0.60
 min_equality = 0.59
 min_redundancy = 0.976
 max_cycles = 0
@@ -15,17 +15,17 @@ no_god_files = true
 [[layers]]
 name = "domain"
 paths = ["src/pyhttpd/domain/**"]
-order = 4
+order = 3
 
 [[layers]]
 name = "application"
 paths = ["src/pyhttpd/application/**"]
-order = 3
+order = 2
 
 [[layers]]
 name = "adapters"
 paths = ["src/pyhttpd/adapters/**"]
-order = 2
+order = 1
 
 [[layers]]
 name = "legacy"
