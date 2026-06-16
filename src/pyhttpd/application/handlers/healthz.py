@@ -5,8 +5,13 @@ from typing import Callable, Optional
 
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.rendering import healthz_response
-from pyhttpd.domain import SECURITY_HEADERS, HttpRequest, HttpResponse
-from pyhttpd.domain.ports import DrainingState, Logger
+from pyhttpd.domain import (
+    SECURITY_HEADERS,
+    DrainingState,
+    HttpRequest,
+    HttpResponse,
+    Logger,
+)
 
 RouteHandler = Callable[[HttpRequest, RequestContext], HttpResponse]
 

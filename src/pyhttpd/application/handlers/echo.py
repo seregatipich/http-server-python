@@ -5,8 +5,13 @@ from typing import Callable, Optional
 
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.rendering import text_response
-from pyhttpd.domain import SECURITY_HEADERS, CorsConfig, HttpRequest, HttpResponse
-from pyhttpd.domain.ports import Logger
+from pyhttpd.domain import (
+    SECURITY_HEADERS,
+    CorsConfig,
+    HttpRequest,
+    HttpResponse,
+    Logger,
+)
 
 _COMPRESSION_LOGGER = logging.getLogger("http_server.handlers.system")
 

@@ -20,7 +20,7 @@ from pyhttpd.domain.errors import (
     ServiceUnavailable,
 )
 from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
-from pyhttpd.domain.ports import DrainingState
+from pyhttpd.domain.ports import DrainingState, Logger, RateLimiter
 from pyhttpd.domain.ratelimit import RateLimitDecision, TokenBucketSettings
 from pyhttpd.domain.sandbox import resolve_sandbox_path
 
@@ -40,10 +40,12 @@ __all__ = [
     "HttpResponse",
     "InternalServerError",
     "LifecycleState",
+    "Logger",
     "MethodNotAllowed",
     "NotFound",
     "RateLimitDecision",
     "RateLimited",
+    "RateLimiter",
     "RequestEntityTooLarge",
     "ServiceUnavailable",
     "TokenBucketSettings",

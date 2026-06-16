@@ -16,12 +16,12 @@ from pyhttpd.domain import (
     ForbiddenPath,
     HttpRequest,
     HttpResponse,
+    Logger,
     MethodNotAllowed,
     NotFound,
     resolve_sandbox_path,
     should_close,
 )
-from pyhttpd.domain.ports import Logger
 
 RouteHandler = Callable[[HttpRequest, RequestContext], HttpResponse]
 FILE_ALLOWED_METHODS = ("GET", "POST")
