@@ -21,6 +21,7 @@ from pyhttpd.domain import (
 )
 from pyhttpd.domain.errors import (
     BadRequest,
+    Forbidden,
     MethodNotAllowed,
     RequestEntityTooLarge,
 )
@@ -353,3 +354,37 @@ def test_options_request_missing_preflight_header_returns_none():
         "/", method="OPTIONS", headers={"origin": "https://example.com"}
     )
     assert run_validation(request) is PASSTHROUGH
+
+
+def test_validate_request_rejects_relative_path():
+    """Reject paths that do not start with a leading slash."""
+    request = make_request("files/name")
+    with pytest.raises(BadRequest):
+        run_validation(request)
+
+
+def test_validate_request_rejects_null_byte_in_path():
+    """Reject paths containing an embedded NUL byte."""
+    request = make_request("/files/na\x00me")
+    with pytest.raises(BadRequest):
+        run_validation(request)
+
+
+@pytest.mark.parametrize("path", ["/a/../b", "/a/..", "/.."])
+def test_validate_request_rejects_traversal_paths(path):
+    """Reject traversal-shaped paths with a Forbidden error."""
+    request = make_request(path)
+    with pytest.raises(Forbidden):
+        run_validation(request)
+
+
+def test_validate_request_rejects_non_integer_content_length():
+    """Reject POST requests whose Content-Length is not an integer."""
+    request = make_request(
+        "/files/name",
+        method="POST",
+        headers={"content-length": "not-a-number"},
+        body=b"data",
+    )
+    with pytest.raises(BadRequest):
+        run_validation(request)

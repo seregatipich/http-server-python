@@ -107,3 +107,58 @@ def test_rate_limit_enforced_raises() -> None:
 
     with pytest.raises(RateLimited):
         run_middleware(limiter, make_request())
+
+
+def test_consume_with_zero_rate_limit_always_allows() -> None:
+    """A limiter built with rate_limit=0 allows every request with no headers."""
+    limiter = TokenBucketLimiter(
+        TokenBucketSettings(
+            rate_limit=0,
+            window_ms=1000,
+            burst_capacity=0,
+            dry_run=False,
+        ),
+        time_provider=lambda: 0,
+    )
+
+    decision = limiter.consume("203.0.113.7")
+
+    assert decision.allowed is True
+    assert decision.headers == {}
+
+
+def test_reset_clears_per_client_state() -> None:
+    """reset(ip) discards the bucket so the client is allowed again."""
+    limiter = make_limiter()
+
+    assert limiter.consume("198.51.100.4").allowed is True
+    assert limiter.consume("198.51.100.4").allowed is False
+
+    limiter.reset("198.51.100.4")
+
+    assert limiter.consume("198.51.100.4").allowed is True
+
+
+def test_tokens_refill_after_window_elapses() -> None:
+    """Advancing the clock by one window refills an exhausted client's bucket."""
+    current_ns = 0
+
+    def clock() -> int:
+        return current_ns
+
+    limiter = TokenBucketLimiter(
+        TokenBucketSettings(
+            rate_limit=1,
+            window_ms=1000,
+            burst_capacity=1,
+            dry_run=False,
+        ),
+        time_provider=clock,
+    )
+
+    assert limiter.consume("192.0.2.10").allowed is True
+    assert limiter.consume("192.0.2.10").allowed is False
+
+    current_ns = 1000 * 1_000_000
+
+    assert limiter.consume("192.0.2.10").allowed is True

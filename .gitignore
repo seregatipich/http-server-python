@@ -40,3 +40,5 @@ Thumbs.db
 ai_docs/
 certs/
 .sentrux/
+# Claude Code worktrees
+.claude/worktrees/
