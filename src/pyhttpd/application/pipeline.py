@@ -3,7 +3,7 @@
 from typing import Callable, Iterable, Protocol
 
 from pyhttpd.application.context import RequestContext
-from pyhttpd.domain.http import HttpRequest, HttpResponse
+from pyhttpd.domain import HttpRequest, HttpResponse
 
 Handler = Callable[[HttpRequest, RequestContext], HttpResponse]
 

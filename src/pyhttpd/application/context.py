@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from pyhttpd.domain.ratelimit import RateLimitDecision
+from pyhttpd.domain import RateLimitDecision
 
 
 @dataclass

@@ -61,6 +61,20 @@ class _PortLogger:  # pylint: disable=too-few-public-methods
 WORKER_PORT_LOGGER = _PortLogger(WORKER_LOGGER)
 
 
+def _log_worker_error(error: Exception, client_addr_str: str) -> None:
+    """Log an unexpected worker failure with structured context."""
+    WORKER_LOGGER.error(
+        "Unexpected error in worker",
+        extra={
+            "event": "worker_error",
+            "client": client_addr_str,
+            "error_type": type(error).__name__,
+            "error": str(error),
+        },
+        exc_info=True,
+    )
+
+
 def _recv_with_deadline(client_socket: socket.socket, deadline_ns: int) -> bytes:
     """Receive data from socket with a deadline, raising TimeoutError if exceeded."""
     remaining_ns = deadline_ns - time.monotonic_ns()
@@ -171,16 +185,7 @@ def _process_request(
     except HttpError as error:
         response = ErrorMapper.to_response(error, request, context.cors_config)
     except Exception as error:  # pylint: disable=broad-except
-        WORKER_LOGGER.error(
-            "Unexpected error in worker",
-            extra={
-                "event": "worker_error",
-                "client": client_addr_str,
-                "error_type": type(error).__name__,
-                "error": str(error),
-            },
-            exc_info=True,
-        )
+        _log_worker_error(error, client_addr_str)
         response = ErrorMapper.internal_error(request, context.cors_config)
     send_response(client_socket, response)
     return response.close_connection
@@ -347,16 +352,7 @@ def handle_client(
             },
         )
     except Exception as error:  # pylint: disable=broad-except
-        WORKER_LOGGER.error(
-            "Unexpected error in worker",
-            extra={
-                "event": "worker_error",
-                "client": client_addr_str,
-                "error_type": type(error).__name__,
-                "error": str(error),
-            },
-            exc_info=True,
-        )
+        _log_worker_error(error, client_addr_str)
     finally:
         _cleanup_worker(
             context,

@@ -6,20 +6,23 @@ from collections.abc import Iterable
 from typing import Optional, Tuple
 
 from pyhttpd.application.middleware.cors import apply_cors_headers
-from pyhttpd.domain.config import SECURITY_HEADERS, CorsConfig
-from pyhttpd.domain.errors import (
+from pyhttpd.domain import (
+    SECURITY_HEADERS,
     BadRequest,
+    CorsConfig,
     Forbidden,
     ForbiddenPath,
     HttpError,
+    HttpRequest,
+    HttpResponse,
     MethodNotAllowed,
     NotFound,
+    RateLimitDecision,
     RateLimited,
     RequestEntityTooLarge,
     ServiceUnavailable,
+    should_close,
 )
-from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
-from pyhttpd.domain.ratelimit import RateLimitDecision
 
 
 def _gzip_quality(params: str) -> float:

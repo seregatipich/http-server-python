@@ -4,13 +4,14 @@ from typing import AbstractSet
 
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.pipeline import Handler, Middleware
-from pyhttpd.domain.errors import (
+from pyhttpd.domain import (
     BadRequest,
     Forbidden,
+    HttpRequest,
+    HttpResponse,
     MethodNotAllowed,
     RequestEntityTooLarge,
 )
-from pyhttpd.domain.http import HttpRequest, HttpResponse
 
 
 def _enforce_allowed_method(

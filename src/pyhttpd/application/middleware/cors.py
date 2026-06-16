@@ -4,8 +4,7 @@ from typing import Optional
 
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.pipeline import Handler, Middleware
-from pyhttpd.domain.config import CorsConfig
-from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
+from pyhttpd.domain import CorsConfig, HttpRequest, HttpResponse, should_close
 
 
 def is_preflight_request(request: HttpRequest) -> bool:
