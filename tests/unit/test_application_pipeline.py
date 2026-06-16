@@ -6,16 +6,7 @@
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.pipeline import Handler, Middleware, build_chain
 from pyhttpd.domain.http import HttpRequest, HttpResponse
-
-
-def make_request(path: str = "/") -> HttpRequest:
-    """Build a minimal HttpRequest for chain invocation."""
-    return HttpRequest(method="GET", path=path, headers={}, body=b"")
-
-
-def make_context() -> RequestContext:
-    """Build a minimal RequestContext for chain invocation."""
-    return RequestContext(correlation_id="cid-1", start_ns=0)
+from tests.unit._helpers import make_context, make_request
 
 
 def make_response(status_line: str = "200 OK") -> HttpResponse:

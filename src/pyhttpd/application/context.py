@@ -13,4 +13,3 @@ class RequestContext:
     correlation_id: Optional[str]
     start_ns: int
     rate_decision: Optional[RateLimitDecision] = None
-    request_wants_close: bool = True

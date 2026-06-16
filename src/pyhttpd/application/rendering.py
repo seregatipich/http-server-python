@@ -3,8 +3,9 @@
 import gzip
 import logging
 from collections.abc import Iterable
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
+from pyhttpd.application.context import RequestContext
 from pyhttpd.application.middleware.cors import apply_cors_headers
 from pyhttpd.domain import (
     SECURITY_HEADERS,
@@ -15,6 +16,7 @@ from pyhttpd.domain import (
     HttpError,
     HttpRequest,
     HttpResponse,
+    Logger,
     MethodNotAllowed,
     NotFound,
     RateLimitDecision,
@@ -23,6 +25,11 @@ from pyhttpd.domain import (
     ServiceUnavailable,
     should_close,
 )
+
+_COMPRESSION_LOGGER = logging.getLogger("http_server.handlers.system")
+
+RouteHandler = Callable[[HttpRequest, RequestContext], HttpResponse]
+TextExtractor = Callable[[HttpRequest], str]
 
 
 def _gzip_quality(params: str) -> float:
@@ -142,6 +149,26 @@ def text_response(
         payload,
         {"Content-Type": "text/plain", **headers},
     )
+
+
+def make_text_handler(
+    logger: Logger,
+    cors_config: Optional[CorsConfig],
+    extract: TextExtractor,
+    log_event: str,
+    log_content_length: bool = True,
+) -> RouteHandler:
+    """Build a text/plain route handler that logs a debug event."""
+
+    def handle(request: HttpRequest, _ctx: RequestContext) -> HttpResponse:
+        content = extract(request)
+        fields = {"content_length": len(content)} if log_content_length else {}
+        logger.log(logging.DEBUG, log_event, **fields)
+        return text_response(
+            content, request, cors_config, SECURITY_HEADERS, _COMPRESSION_LOGGER
+        )
+
+    return handle
 
 
 def not_found_response(

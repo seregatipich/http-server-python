@@ -21,18 +21,7 @@ from pyhttpd.domain.errors import (
     NotFound,
     ServiceUnavailable,
 )
-
-
-def make_request(
-    path: str,
-    *,
-    method: str = "GET",
-    headers: dict[str, str] | None = None,
-    body: bytes = b"",
-) -> HttpRequest:
-    """Create a request targeted at the main server entry point."""
-
-    return HttpRequest(method, path, headers or {}, body)
+from tests.unit._helpers import make_request
 
 
 def route_request(request: HttpRequest, directory: str):

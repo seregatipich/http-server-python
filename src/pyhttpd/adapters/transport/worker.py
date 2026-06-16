@@ -39,7 +39,6 @@ from pyhttpd.domain import (
     HttpRequest,
     HttpResponse,
     RequestEntityTooLarge,
-    should_close,
 )
 
 WORKER_LOGGER = CorrelationLoggerAdapter(
@@ -177,7 +176,6 @@ def _process_request(
     ctx = RequestContext(
         correlation_id=get_correlation_id(),
         start_ns=time.monotonic_ns(),
-        request_wants_close=should_close(request.headers),
     )
     chain = _build_request_chain(context, client_ip, max_body_bytes)
     try:

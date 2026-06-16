@@ -25,25 +25,13 @@ from pyhttpd.domain.errors import (
     MethodNotAllowed,
     RequestEntityTooLarge,
 )
+from tests.unit._helpers import PASSTHROUGH, make_request
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
     "Content-Security-Policy": "default-src 'self'",
     "X-Content-Type-Options": "nosniff",
 }
-
-
-def make_request(
-    path: str,
-    method: str = "GET",
-    headers: dict | None = None,
-    body: bytes = b"",
-) -> HttpRequest:
-    """Construct a HttpRequest test double with sane defaults."""
-    return HttpRequest(method, path, headers or {}, body)
-
-
-PASSTHROUGH = object()
 
 
 def run_validation(request: HttpRequest):

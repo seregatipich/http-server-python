@@ -4,6 +4,8 @@ import logging
 
 import pytest
 
+from pyhttpd.application.context import RequestContext
+
 
 @pytest.fixture(autouse=True)
 def enable_log_propagation():
@@ -13,3 +15,9 @@ def enable_log_propagation():
     logger.propagate = True
     yield
     logger.propagate = old_propagate
+
+
+@pytest.fixture(name="ctx")
+def fixture_ctx():
+    """Build a request context for handler invocation."""
+    return RequestContext(correlation_id="cid-1", start_ns=0)

@@ -13,8 +13,7 @@ from pyhttpd.application.middleware.rate_limit import (
 )
 from pyhttpd.domain import HttpRequest, RateLimited, TokenBucketSettings
 from pyhttpd.domain.ratelimit import RateLimitDecision
-
-PASSTHROUGH = object()
+from tests.unit._helpers import PASSTHROUGH, make_request
 
 
 def make_decision(allowed: bool, dry_run: bool) -> RateLimitDecision:
@@ -28,11 +27,6 @@ def make_decision(allowed: bool, dry_run: bool) -> RateLimitDecision:
         dry_run=dry_run,
         window_seconds=1.0,
     )
-
-
-def make_request(headers: dict[str, str] | None = None) -> HttpRequest:
-    """Build a minimal request for rate-limit middleware tests."""
-    return HttpRequest("GET", "/", headers or {}, b"")
 
 
 def make_limiter(dry_run: bool = False) -> TokenBucketLimiter:
