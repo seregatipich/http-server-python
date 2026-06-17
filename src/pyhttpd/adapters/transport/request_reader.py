@@ -38,16 +38,12 @@ def _reject(
     message: str,
     event: str,
     response: HttpResponse,
-    extra: Optional[dict[str, object]] = None,
 ) -> tuple[Optional[HttpRequest], bytes, bool]:
     """Log a rejected request, send the error response, and signal termination."""
-    fields: dict[str, object] = {
-        "event": event,
-        "client": format_client_address(client_address),
-    }
-    if extra:
-        fields.update(extra)
-    WORKER_LOGGER.warning(message, extra=fields)
+    WORKER_LOGGER.warning(
+        message,
+        extra={"event": event, "client": format_client_address(client_address)},
+    )
     send_response(client_socket, response)
     return None, b"", True
 
@@ -63,14 +59,16 @@ def _read_request_with_validation(
     try:
         request, buffer = receive_request(client_socket, buffer, max_body_bytes)
     except RequestEntityTooLarge:
-        return _reject(
-            client_socket,
-            client_address,
+        WORKER_LOGGER.warning(
             "Request body size exceeded limit",
-            "body_size_exceeded",
-            entity_too_large_response(SECURITY_HEADERS),
-            {"limit": max_body_bytes},
+            extra={
+                "event": "body_size_exceeded",
+                "client": format_client_address(client_address),
+                "limit": max_body_bytes,
+            },
         )
+        send_response(client_socket, entity_too_large_response(SECURITY_HEADERS))
+        return None, b"", True
     except ForbiddenPath:
         return _reject(
             client_socket,
