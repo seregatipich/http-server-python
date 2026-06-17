@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from typing import Callable, Optional, Tuple
 
 from pyhttpd.application.context import RequestContext
-from pyhttpd.application.middleware.cors import apply_cors_headers
+from pyhttpd.application.cors_headers import apply_cors_headers
 from pyhttpd.domain import (
     SECURITY_HEADERS,
     BadRequest,

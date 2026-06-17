@@ -4,7 +4,7 @@ import pytest
 
 from pyhttpd.adapters.config.cli_args import MAX_BODY_BYTES
 from pyhttpd.application.context import RequestContext
-from pyhttpd.application.middleware.cors import (
+from pyhttpd.application.cors_headers import (
     apply_cors_headers,
     determine_allowed_origin,
     is_preflight_request,

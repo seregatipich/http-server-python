@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable, Iterator, Optional
 
 from pyhttpd.application.context import RequestContext
-from pyhttpd.application.middleware.cors import apply_cors_headers
+from pyhttpd.application.cors_headers import apply_cors_headers
 from pyhttpd.application.rendering import empty_response
 from pyhttpd.domain import (
     FILES_ENDPOINT_PREFIX,
