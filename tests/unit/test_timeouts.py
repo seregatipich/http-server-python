@@ -7,9 +7,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from pyhttpd.adapters.config.cli_args import ServerConfig
-from pyhttpd.adapters.lifecycle import ServerLifecycle
-from pyhttpd.adapters.transport.worker import _recv_with_deadline
+from pyhttpd.adapters import ServerLifecycle
+from pyhttpd.adapters.config import ServerConfig
+from pyhttpd.adapters.transport import _recv_with_deadline
 
 
 class TestRecvWithDeadline:

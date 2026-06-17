@@ -1,6 +1,6 @@
 """Shared construction helpers for unit tests."""
 
-from pyhttpd.application.context import RequestContext
+from pyhttpd.application import RequestContext
 from pyhttpd.domain import HttpRequest
 
 PASSTHROUGH = object()

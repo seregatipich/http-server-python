@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 import requests
 
-from pyhttpd.adapters.config.cli_args import MAX_BODY_BYTES
+from pyhttpd.adapters.config import MAX_BODY_BYTES
 
 pytestmark = pytest.mark.integration
 

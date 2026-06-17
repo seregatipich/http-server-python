@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from pyhttpd.adapters.logging.correlation_adapter import (
+from pyhttpd.adapters.logging import (
     CorrelationLoggerAdapter,
     clear_correlation_id,
     set_correlation_id,

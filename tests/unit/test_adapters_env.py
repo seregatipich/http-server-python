@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyhttpd.adapters.config.env import _env_bool, _env_int, _env_list
+from pyhttpd.adapters.config import _env_bool, _env_int, _env_list
 
 VAR = "HTTP_SERVER_TEST_ENV"
 

@@ -20,7 +20,13 @@ from pyhttpd.domain.errors import (
     ServiceUnavailable,
 )
 from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
-from pyhttpd.domain.ports import DrainingState, Logger, RateLimiter
+from pyhttpd.domain.ports import (
+    Clock,
+    DrainingState,
+    IdGenerator,
+    Logger,
+    RateLimiter,
+)
 from pyhttpd.domain.ratelimit import RateLimitDecision, TokenBucketSettings
 from pyhttpd.domain.sandbox import resolve_sandbox_path
 
@@ -33,9 +39,11 @@ __all__ = [
     "SECURITY_HEADERS",
     "CorsConfig",
     "BadRequest",
+    "Clock",
     "Forbidden",
     "ForbiddenPath",
     "HttpError",
+    "IdGenerator",
     "HttpRequest",
     "HttpResponse",
     "InternalServerError",

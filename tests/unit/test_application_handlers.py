@@ -2,9 +2,11 @@
 
 import logging
 
-from pyhttpd.application.handlers.echo import make_echo_handler
-from pyhttpd.application.handlers.healthz import make_healthz_handler
-from pyhttpd.application.handlers.user_agent import make_user_agent_handler
+from pyhttpd.application import (
+    make_echo_handler,
+    make_healthz_handler,
+    make_user_agent_handler,
+)
 from pyhttpd.domain import CorsConfig, HttpResponse
 from tests.unit._helpers import RecordingLogger, make_request
 

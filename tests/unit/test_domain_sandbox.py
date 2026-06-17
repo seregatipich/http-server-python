@@ -2,8 +2,7 @@
 
 import pytest
 
-from pyhttpd.domain.errors import ForbiddenPath
-from pyhttpd.domain.sandbox import resolve_sandbox_path
+from pyhttpd.domain import ForbiddenPath, resolve_sandbox_path
 
 
 def test_valid_file_resolves_inside_root(tmp_path):

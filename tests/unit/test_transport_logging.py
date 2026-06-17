@@ -6,12 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pyhttpd.adapters.config.cli_args import ServerConfig
-from pyhttpd.adapters.lifecycle import ServerLifecycle
-from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
-from pyhttpd.adapters.transport.context import WorkerContext
-from pyhttpd.adapters.transport.server import run_server
-from pyhttpd.adapters.transport.worker import handle_client
+from pyhttpd.adapters import ServerLifecycle
+from pyhttpd.adapters.config import ServerConfig
+from pyhttpd.adapters.transport import (
+    ConnectionLimiter,
+    WorkerContext,
+    handle_client,
+    run_server,
+)
 from pyhttpd.domain import ForbiddenPath, HttpRequest, RequestEntityTooLarge
 
 

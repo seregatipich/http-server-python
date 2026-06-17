@@ -4,15 +4,19 @@ from unittest.mock import Mock
 
 import pytest
 
-from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
-from pyhttpd.application.context import RequestContext
-from pyhttpd.application.middleware.rate_limit import (
+from pyhttpd.adapters.ratelimit import TokenBucketLimiter
+from pyhttpd.application import (
     RateLimitOutcome,
+    RequestContext,
     classify,
     make_rate_limit_middleware,
 )
-from pyhttpd.domain import HttpRequest, RateLimited, TokenBucketSettings
-from pyhttpd.domain.ratelimit import RateLimitDecision
+from pyhttpd.domain import (
+    HttpRequest,
+    RateLimitDecision,
+    RateLimited,
+    TokenBucketSettings,
+)
 from tests.unit._helpers import PASSTHROUGH, make_request
 
 

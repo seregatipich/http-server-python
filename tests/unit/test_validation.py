@@ -2,28 +2,26 @@
 
 import pytest
 
-from pyhttpd.adapters.config.cli_args import MAX_BODY_BYTES
-from pyhttpd.application.context import RequestContext
-from pyhttpd.application.cors_headers import (
+from pyhttpd.adapters.config import MAX_BODY_BYTES
+from pyhttpd.application import (
+    ErrorMapper,
+    RequestContext,
     apply_cors_headers,
     determine_allowed_origin,
     is_preflight_request,
+    make_validation_middleware,
     preflight_response,
 )
-from pyhttpd.application.middleware.validation import make_validation_middleware
-from pyhttpd.application.rendering import ErrorMapper
 from pyhttpd.domain import (
     ALLOWED_METHODS,
+    BadRequest,
     CorsConfig,
+    Forbidden,
     ForbiddenPath,
     HttpRequest,
-    resolve_sandbox_path,
-)
-from pyhttpd.domain.errors import (
-    BadRequest,
-    Forbidden,
     MethodNotAllowed,
     RequestEntityTooLarge,
+    resolve_sandbox_path,
 )
 from tests.unit._helpers import PASSTHROUGH, make_request
 

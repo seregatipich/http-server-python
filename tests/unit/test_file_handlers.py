@@ -4,7 +4,7 @@ import mimetypes
 
 import pytest
 
-from pyhttpd.application.handlers.files import make_files_handler, make_index_handler
+from pyhttpd.application import make_files_handler, make_index_handler
 from pyhttpd.domain import (
     Forbidden,
     HttpResponse,

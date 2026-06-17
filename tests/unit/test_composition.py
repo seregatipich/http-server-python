@@ -3,10 +3,9 @@
 import socket
 
 from pyhttpd import composition
-from pyhttpd.adapters.config.cli_args import ServerConfig, parse_cli_args
-from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
-from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
-from pyhttpd.adapters.transport.context import WorkerContext
+from pyhttpd.adapters.config import ServerConfig, parse_cli_args
+from pyhttpd.adapters.ratelimit import TokenBucketLimiter
+from pyhttpd.adapters.transport import ConnectionLimiter, WorkerContext
 from pyhttpd.composition import (
     Server,
     _create_cors_config,

@@ -1,6 +1,6 @@
 """Unit tests for pyhttpd.domain.config constants and CorsConfig."""
 
-from pyhttpd.domain.config import (
+from pyhttpd.domain import (
     ALLOWED_METHODS,
     DEFAULT_MAX_BODY_BYTES,
     FILES_ENDPOINT_PREFIX,

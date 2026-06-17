@@ -4,10 +4,9 @@ import re
 import uuid
 from typing import Protocol, runtime_checkable
 
-from pyhttpd.adapters.clock import MonotonicClock
-from pyhttpd.adapters.ids import Uuid4IdGenerator
+from pyhttpd.adapters import MonotonicClock, Uuid4IdGenerator
 from pyhttpd.adapters.transport import wire
-from pyhttpd.domain.ports import Clock, IdGenerator
+from pyhttpd.domain import Clock, IdGenerator
 
 
 def test_monotonic_clock_now_ns_returns_int():

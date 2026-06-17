@@ -3,9 +3,8 @@
 # Fake middleware/handler doubles must match the chain signatures verbatim.
 # pylint: disable=unused-argument
 
-from pyhttpd.application.context import RequestContext
-from pyhttpd.application.pipeline import Handler, Middleware, build_chain
-from pyhttpd.domain.http import HttpRequest, HttpResponse
+from pyhttpd.application import Handler, Middleware, RequestContext, build_chain
+from pyhttpd.domain import HttpRequest, HttpResponse
 from tests.unit._helpers import make_context, make_request
 
 

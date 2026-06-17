@@ -4,21 +4,24 @@ import gzip
 from pathlib import Path
 from unittest.mock import Mock
 
-from pyhttpd.application.context import RequestContext
-from pyhttpd.application.rendering import (
+from pyhttpd.application import (
     ErrorMapper,
+    RequestContext,
     connection_limited_response,
     internal_error_response,
+    make_default_router,
     method_not_allowed_response,
     rate_limited_response,
 )
-from pyhttpd.application.routing import make_default_router
-from pyhttpd.domain import SECURITY_HEADERS, HttpError, HttpRequest, RateLimitDecision
-from pyhttpd.domain.errors import (
+from pyhttpd.domain import (
+    SECURITY_HEADERS,
     BadRequest,
     Forbidden,
+    HttpError,
+    HttpRequest,
     MethodNotAllowed,
     NotFound,
+    RateLimitDecision,
     ServiceUnavailable,
 )
 from tests.unit._helpers import make_request

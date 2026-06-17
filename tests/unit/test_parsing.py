@@ -2,11 +2,11 @@
 
 import pytest
 
-from pyhttpd.adapters.logging.correlation_adapter import (
+from pyhttpd.adapters.logging import (
     clear_correlation_id,
     get_correlation_id,
 )
-from pyhttpd.adapters.transport.io import (
+from pyhttpd.adapters.transport import (
     determine_content_length,
     parse_headers,
     parse_request_line,

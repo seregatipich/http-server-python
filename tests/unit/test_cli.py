@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pyhttpd.adapters.config.cli_args import (
+from pyhttpd.adapters.config import (
     DEFAULT_BURST_CAPACITY,
     DEFAULT_MAX_CONNECTIONS,
     DEFAULT_MAX_CONNECTIONS_PER_IP,

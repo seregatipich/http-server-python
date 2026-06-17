@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from pyhttpd.application.context import RequestContext
+from pyhttpd.application import RequestContext
 
 
 @pytest.fixture(autouse=True)

@@ -1,6 +1,6 @@
 """Unit tests for pyhttpd.domain.http value types and should_close."""
 
-from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
+from pyhttpd.domain import HttpRequest, HttpResponse, should_close
 
 
 def test_http_request_holds_provided_fields() -> None:

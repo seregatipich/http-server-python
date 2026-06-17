@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyhttpd.domain.errors import (
+from pyhttpd.domain import (
     BadRequest,
     Forbidden,
     ForbiddenPath,
