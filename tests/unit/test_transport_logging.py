@@ -196,8 +196,9 @@ def test_worker_logs_body_size_exceeded(caplog):
 
     client_sock = MagicMock()
 
-    # Patch the function where it is USED (in worker.py namespace)
-    with patch("pyhttpd.adapters.transport.worker.receive_request") as mock_recv:
+    with patch(
+        "pyhttpd.adapters.transport.request_reader.receive_request"
+    ) as mock_recv:
         mock_recv.side_effect = RequestEntityTooLarge("Too big")
 
         context = MagicMock(spec=WorkerContext)
@@ -243,8 +244,8 @@ def test_worker_logs_forbidden_path(caplog):
     client_sock = MagicMock()
 
     with (
-        patch("pyhttpd.adapters.transport.worker.receive_request") as mock_recv,
-        patch("pyhttpd.adapters.transport.worker.send_response") as mock_send,
+        patch("pyhttpd.adapters.transport.request_reader.receive_request") as mock_recv,
+        patch("pyhttpd.adapters.transport.request_reader.send_response") as mock_send,
     ):
         mock_recv.side_effect = ForbiddenPath("escape attempt")
 
@@ -269,8 +270,8 @@ def test_worker_logs_malformed_request(caplog):
     client_sock = MagicMock()
 
     with (
-        patch("pyhttpd.adapters.transport.worker.receive_request") as mock_recv,
-        patch("pyhttpd.adapters.transport.worker.send_response") as mock_send,
+        patch("pyhttpd.adapters.transport.request_reader.receive_request") as mock_recv,
+        patch("pyhttpd.adapters.transport.request_reader.send_response") as mock_send,
     ):
         mock_recv.side_effect = ValueError("bad request line")
 
@@ -292,8 +293,8 @@ def test_worker_sends_draining_response_and_stops():
     client_sock = MagicMock()
 
     with (
-        patch("pyhttpd.adapters.transport.worker.receive_request") as mock_recv,
-        patch("pyhttpd.adapters.transport.worker.send_response") as mock_send,
+        patch("pyhttpd.adapters.transport.request_reader.receive_request") as mock_recv,
+        patch("pyhttpd.adapters.transport.worker_lifecycle.send_response") as mock_send,
     ):
         handle_client(client_sock, ("127.0.0.1", 54321), _draining_context())
 
@@ -316,7 +317,7 @@ def test_worker_logs_worker_error_and_sends_500(caplog):
         raise RuntimeError("handler blew up")
 
     with (
-        patch("pyhttpd.adapters.transport.worker.receive_request") as mock_recv,
+        patch("pyhttpd.adapters.transport.request_reader.receive_request") as mock_recv,
         patch("pyhttpd.adapters.transport.worker.send_response") as mock_send,
         patch(
             "pyhttpd.adapters.transport.worker._build_request_chain",
