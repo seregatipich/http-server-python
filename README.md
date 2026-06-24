@@ -134,3 +134,9 @@ python3 tests/manual_http_runner.py [--base-url <url>] [--skip-smoke] [--skip-lo
 ```
 
 The manual CLI drives smoke checks, persistent-connection probes, multi-megabyte file transfers, and progressive load/stress tiers. Run results are stored in `.http-test-artifacts/`, which stays out of version control.
+
+## Housekeeping
+
+```bash
+make clean   # remove tool caches, build metadata, __pycache__, and stray logs
+```
