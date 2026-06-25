@@ -57,6 +57,17 @@ class MethodNotAllowed(HttpError):
         self.allowed = tuple(allowed)
 
 
+class Unauthorized(HttpError):
+    """Raised when a request lacks valid authentication credentials."""
+
+    status = 401
+    reason = "Unauthorized"
+
+    def __init__(self, challenge: str) -> None:
+        super().__init__()
+        self.challenge = challenge
+
+
 class RateLimited(HttpError):
     """Raised when a client exceeds the configured rate limit."""
 

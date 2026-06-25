@@ -13,3 +13,4 @@ class RequestContext:
     correlation_id: Optional[str]
     start_ns: int
     rate_decision: Optional[RateLimitDecision] = None
+    principal: Optional[str] = None

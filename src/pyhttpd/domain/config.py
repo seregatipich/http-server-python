@@ -1,6 +1,7 @@
 """Static configuration values and CORS settings."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Optional
 
 DEFAULT_MAX_BODY_BYTES = 5 * 1024 * 1024
 FILES_ENDPOINT_PREFIX = "/files/"
@@ -22,3 +23,15 @@ class CorsConfig:
     expose_headers: list[str]
     allow_credentials: bool
     max_age: int
+
+
+@dataclass
+class AuthConfig:
+    """Authentication settings shared by the auth adapters."""
+
+    mode: str
+    credentials: dict[str, str] = field(default_factory=dict)
+    roles: dict[str, list[str]] = field(default_factory=dict)
+    jwt_secret: str = ""
+    jwt_issuer: Optional[str] = None
+    jwt_audience: Optional[str] = None

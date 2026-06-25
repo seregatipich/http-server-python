@@ -23,6 +23,7 @@ from pyhttpd.domain import (
     RateLimited,
     RequestEntityTooLarge,
     ServiceUnavailable,
+    Unauthorized,
     should_close,
 )
 
@@ -199,6 +200,22 @@ def forbidden_response(
     )
 
 
+def unauthorized_response(
+    request: Optional[HttpRequest],
+    cors_config: Optional[CorsConfig],
+    security_headers: dict[str, str],
+    challenge: str,
+) -> HttpResponse:
+    """Produce a 401 response advertising the authentication challenge."""
+    return _request_response(
+        "HTTP/1.1 401 Unauthorized",
+        request,
+        cors_config,
+        security_headers,
+        extra_headers={"WWW-Authenticate": challenge},
+    )
+
+
 def bad_request_response(
     request: Optional[HttpRequest],
     cors_config: Optional[CorsConfig],
@@ -313,6 +330,10 @@ class ErrorMapper:
         """Map a domain HttpError to its corresponding HTTP response."""
         if isinstance(error, BadRequest):
             return bad_request_response(request, cors_config, SECURITY_HEADERS)
+        if isinstance(error, Unauthorized):
+            return unauthorized_response(
+                request, cors_config, SECURITY_HEADERS, error.challenge
+            )
         if isinstance(error, (Forbidden, ForbiddenPath)):
             return forbidden_response(request, cors_config, SECURITY_HEADERS)
         if isinstance(error, NotFound):

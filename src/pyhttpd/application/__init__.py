@@ -11,6 +11,7 @@ from pyhttpd.application.handlers.echo import make_echo_handler
 from pyhttpd.application.handlers.files import make_files_handler, make_index_handler
 from pyhttpd.application.handlers.healthz import make_healthz_handler
 from pyhttpd.application.handlers.user_agent import make_user_agent_handler
+from pyhttpd.application.middleware.auth import make_auth_middleware
 from pyhttpd.application.middleware.cors import make_cors_middleware
 from pyhttpd.application.middleware.rate_limit import (
     RateLimitOutcome,
@@ -27,6 +28,7 @@ from pyhttpd.application.rendering import (
     internal_error_response,
     method_not_allowed_response,
     rate_limited_response,
+    unauthorized_response,
 )
 from pyhttpd.application.routing import make_default_router
 
@@ -41,6 +43,7 @@ __all__ = [
     "make_index_handler",
     "make_healthz_handler",
     "make_user_agent_handler",
+    "make_auth_middleware",
     "make_cors_middleware",
     "RateLimitOutcome",
     "classify",
@@ -56,5 +59,6 @@ __all__ = [
     "internal_error_response",
     "method_not_allowed_response",
     "rate_limited_response",
+    "unauthorized_response",
     "make_default_router",
 ]

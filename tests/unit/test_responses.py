@@ -23,6 +23,7 @@ from pyhttpd.domain import (
     NotFound,
     RateLimitDecision,
     ServiceUnavailable,
+    Unauthorized,
 )
 from tests.unit._helpers import make_request
 
@@ -228,6 +229,18 @@ def test_error_mapper_routes_forbidden() -> None:
 
     response = ErrorMapper.to_response(Forbidden(), make_request("/secret"), None)
     assert response.status_line == "HTTP/1.1 403 Forbidden"
+
+
+def test_error_mapper_routes_unauthorized_with_challenge() -> None:
+    """Unauthorized dispatches to the 401 builder carrying its challenge."""
+
+    response = ErrorMapper.to_response(
+        Unauthorized('Bearer realm="pyhttpd"'),
+        make_request("/files/secret.txt"),
+        None,
+    )
+    assert response.status_line == "HTTP/1.1 401 Unauthorized"
+    assert response.headers["WWW-Authenticate"] == 'Bearer realm="pyhttpd"'
 
 
 def test_error_mapper_routes_method_not_allowed_with_allow_header() -> None:

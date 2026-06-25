@@ -1,7 +1,8 @@
 """Structural protocols for domain dependencies."""
 
-from typing import Protocol
+from typing import Mapping, Optional, Protocol
 
+from pyhttpd.domain.principal import Principal
 from pyhttpd.domain.ratelimit import RateLimitDecision
 
 
@@ -24,6 +25,17 @@ class RateLimiter(Protocol):
 
     def consume(self, key: str) -> RateLimitDecision:
         """Consume a token for the key and return the decision."""
+
+
+class Authenticator(Protocol):
+    """Resolves request credentials into an authenticated principal."""
+
+    @property
+    def challenge(self) -> str:
+        """Return the WWW-Authenticate challenge for rejected requests."""
+
+    def authenticate(self, headers: Mapping[str, str]) -> Optional[Principal]:
+        """Return the authenticated principal, or None when credentials fail."""
 
 
 class Logger(Protocol):
