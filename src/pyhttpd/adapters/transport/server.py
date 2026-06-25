@@ -36,6 +36,9 @@ def _handle_accepted_client(
 
     allowed, limit_type = connection_limiter.acquire(client_address[0])
     if not allowed:
+        if handler_context.metrics_sink is not None:
+            kind = "connection_global" if limit_type == "global" else "connection_ip"
+            handler_context.metrics_sink.inc_rejection(kind)
         limit_event = (
             "connection_limit_reached"
             if limit_type == "global"
@@ -80,10 +83,14 @@ def _accept_client(server_socket: socket.socket, lifecycle: LifecycleState):
 
 
 def _reject_if_draining(
-    lifecycle: LifecycleState, client_socket: socket.socket
+    lifecycle: LifecycleState,
+    client_socket: socket.socket,
+    handler_context: WorkerContext,
 ) -> bool:
     if not lifecycle.is_draining():
         return False
+    if handler_context.metrics_sink is not None:
+        handler_context.metrics_sink.inc_rejection("draining")
     send_response(client_socket, draining_response(SECURITY_HEADERS))
     client_socket.close()
     return True
@@ -103,7 +110,7 @@ def _run_accept_loop(
             continue
 
         client_socket, client_address = accepted
-        if _reject_if_draining(lifecycle, client_socket):
+        if _reject_if_draining(lifecycle, client_socket, handler_context):
             continue
 
         _handle_accepted_client(

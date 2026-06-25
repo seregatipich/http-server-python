@@ -52,6 +52,7 @@ class JsonFormatter(logging.Formatter):
             "socket_timeout",
             "shutdown_grace_seconds",
             "auth_mode",
+            "metrics",
             "signal",
         ]
 

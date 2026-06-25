@@ -2,7 +2,7 @@
 
 import logging
 from enum import Enum
-from typing import Callable
+from typing import Callable, Optional
 
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.pipeline import Handler, Middleware
@@ -10,6 +10,7 @@ from pyhttpd.domain import (
     HttpRequest,
     HttpResponse,
     Logger,
+    MetricsSink,
     RateLimitDecision,
     RateLimited,
     RateLimiter,
@@ -56,6 +57,7 @@ def make_rate_limit_middleware(
     rate_limiter: RateLimiter,
     logger: Logger,
     client_key_of: ClientKeyResolver,
+    metrics_sink: Optional[MetricsSink] = None,
 ) -> Middleware:
     """Build middleware enforcing per-client token bucket rate limits."""
 
@@ -66,6 +68,8 @@ def make_rate_limit_middleware(
         decision = rate_limiter.consume(client_key)
         if classify(decision) is RateLimitOutcome.ENFORCED:
             _log_enforced(logger, client_key, decision)
+            if metrics_sink is not None:
+                metrics_sink.inc_rejection("rate_limit")
             raise RateLimited(decision)
         ctx.rate_decision = decision
         return nxt(request, ctx)

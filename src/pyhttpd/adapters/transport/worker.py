@@ -32,6 +32,7 @@ from pyhttpd.adapters.transport.worker_logging import (
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.middleware.auth import make_auth_middleware
 from pyhttpd.application.middleware.cors import make_cors_middleware
+from pyhttpd.application.middleware.metrics import make_metrics_middleware
 from pyhttpd.application.middleware.rate_limit import make_rate_limit_middleware
 from pyhttpd.application.middleware.validation import make_validation_middleware
 from pyhttpd.application.pipeline import build_chain
@@ -48,6 +49,15 @@ from pyhttpd.domain import (
 __all__ = ["handle_client", "_recv_with_deadline"]
 
 
+def _route_label(request: HttpRequest) -> str:
+    """Collapse high-cardinality paths to bounded metric route labels."""
+    if request.path.startswith("/echo/"):
+        return "/echo/"
+    if request.path.startswith("/files/"):
+        return "/files/"
+    return request.path
+
+
 def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes: int):
     """Assemble the application middleware chain over the default router."""
     router = make_default_router(
@@ -55,6 +65,7 @@ def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes:
         context.lifecycle,
         WORKER_PORT_LOGGER,
         context.cors_config,
+        context.metrics_sink,
     )
 
     def terminal(request: HttpRequest, ctx: RequestContext) -> HttpResponse:
@@ -66,13 +77,17 @@ def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes:
             response.headers.update(ctx.rate_decision.headers)
         return response
 
-    middlewares = [make_cors_middleware(context.cors_config, SECURITY_HEADERS)]
+    middlewares = []
+    if context.metrics_sink is not None:
+        middlewares.append(make_metrics_middleware(context.metrics_sink, _route_label))
+    middlewares.append(make_cors_middleware(context.cors_config, SECURITY_HEADERS))
     if context.rate_limiter is not None:
         middlewares.append(
             make_rate_limit_middleware(
                 context.rate_limiter,
                 WORKER_PORT_LOGGER,
                 lambda request, ctx: client_ip,
+                context.metrics_sink,
             )
         )
     middlewares.append(make_validation_middleware(ALLOWED_METHODS, max_body_bytes))

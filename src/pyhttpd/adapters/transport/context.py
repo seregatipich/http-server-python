@@ -15,3 +15,4 @@ class WorkerContext:
     config: Optional[Any] = None
     cors_config: Optional[Any] = None
     authenticator: Optional[Any] = None
+    metrics_sink: Optional[Any] = None

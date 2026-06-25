@@ -11,6 +11,7 @@ from pyhttpd.adapters.auth import ApiKeyAuthenticator, JwtAuthenticator
 from pyhttpd.adapters.config.cli_args import ServerConfig
 from pyhttpd.adapters.lifecycle import ServerLifecycle
 from pyhttpd.adapters.logging.setup import configure_logging
+from pyhttpd.adapters.metrics import LockingMetricsSink
 from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
 from pyhttpd.adapters.tls import create_server_socket
 from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
@@ -21,6 +22,7 @@ from pyhttpd.domain import (
     Authenticator,
     CorsConfig,
     LifecycleState,
+    MetricsSink,
     TokenBucketSettings,
 )
 
@@ -97,11 +99,17 @@ def _create_rate_limiter(args: argparse.Namespace) -> Optional[TokenBucketLimite
     return None
 
 
+def _create_metrics_sink(args: argparse.Namespace) -> Optional[MetricsSink]:
+    """Create the metrics sink when metrics are enabled, else None."""
+    return LockingMetricsSink() if args.metrics else None
+
+
 def _create_worker_context(
     args: argparse.Namespace,
     config: ServerConfig,
     lifecycle: LifecycleState,
     connection_limiter: ConnectionLimiter,
+    metrics_sink: Optional[MetricsSink] = None,
 ) -> WorkerContext:
     return WorkerContext(
         directory=args.directory,
@@ -111,6 +119,7 @@ def _create_worker_context(
         config=config,
         cors_config=_create_cors_config(args),
         authenticator=_create_authenticator(args),
+        metrics_sink=metrics_sink,
     )
 
 
@@ -170,6 +179,7 @@ def build_server(args: argparse.Namespace) -> Server:
             "socket_timeout": config.socket_timeout,
             "shutdown_grace_seconds": config.shutdown_grace_seconds,
             "auth_mode": args.auth_mode,
+            "metrics": args.metrics,
         },
     )
 
@@ -178,8 +188,9 @@ def build_server(args: argparse.Namespace) -> Server:
         args.max_connections,
         args.max_connections_per_ip,
     )
+    metrics_sink = _create_metrics_sink(args)
     handler_context = _create_worker_context(
-        args, config, lifecycle, connection_limiter
+        args, config, lifecycle, connection_limiter, metrics_sink
     )
     return Server(
         server_socket=server_socket,

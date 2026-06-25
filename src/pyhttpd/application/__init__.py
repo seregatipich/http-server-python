@@ -13,6 +13,7 @@ from pyhttpd.application.handlers.healthz import make_healthz_handler
 from pyhttpd.application.handlers.user_agent import make_user_agent_handler
 from pyhttpd.application.middleware.auth import make_auth_middleware
 from pyhttpd.application.middleware.cors import make_cors_middleware
+from pyhttpd.application.middleware.metrics import make_metrics_middleware
 from pyhttpd.application.middleware.rate_limit import (
     RateLimitOutcome,
     classify,
@@ -45,6 +46,7 @@ __all__ = [
     "make_user_agent_handler",
     "make_auth_middleware",
     "make_cors_middleware",
+    "make_metrics_middleware",
     "RateLimitOutcome",
     "classify",
     "make_rate_limit_middleware",

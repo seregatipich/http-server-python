@@ -34,6 +34,7 @@ DEFAULT_AUTH_ROLES = _env_str("HTTP_SERVER_AUTH_ROLES", "")
 DEFAULT_JWT_SECRET = _env_str("HTTP_SERVER_JWT_SECRET", "")
 DEFAULT_JWT_ISSUER = _env_str("HTTP_SERVER_JWT_ISSUER", "")
 DEFAULT_JWT_AUDIENCE = _env_str("HTTP_SERVER_JWT_AUDIENCE", "")
+DEFAULT_METRICS_ENABLED = _env_bool("HTTP_SERVER_METRICS", False)
 
 
 @dataclass
@@ -189,6 +190,16 @@ def _add_auth_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_observability_args(parser: argparse.ArgumentParser) -> None:
+    """Add observability/metrics arguments."""
+    parser.add_argument(
+        "--metrics",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_METRICS_ENABLED,
+        help="Expose a Prometheus /metrics endpoint",
+    )
+
+
 def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     """Return parsed CLI arguments for server configuration."""
     parser = argparse.ArgumentParser(description="HTTP server configuration")
@@ -202,4 +213,5 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     _add_timeout_args(parser)
     _add_cors_args(parser)
     _add_auth_args(parser)
+    _add_observability_args(parser)
     return parser.parse_args(argv)

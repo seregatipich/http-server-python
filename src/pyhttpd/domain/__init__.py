@@ -22,6 +22,7 @@ from pyhttpd.domain.errors import (
     Unauthorized,
 )
 from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
+from pyhttpd.domain.metrics import HISTOGRAM_BUCKETS_SECONDS, MetricsSink
 from pyhttpd.domain.ports import (
     Authenticator,
     Clock,
@@ -57,9 +58,11 @@ __all__ = [
     "ForbiddenPath",
     "HttpError",
     "IdGenerator",
+    "HISTOGRAM_BUCKETS_SECONDS",
     "HttpRequest",
     "HttpResponse",
     "InternalServerError",
+    "MetricsSink",
     "LifecycleState",
     "Logger",
     "MethodNotAllowed",
