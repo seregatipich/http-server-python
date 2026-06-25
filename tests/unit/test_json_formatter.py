@@ -79,6 +79,22 @@ def test_json_formatter_with_extra_fields(json_formatter):
     assert log_data["duration_ms"] == 15.5
 
 
+def test_json_formatter_emits_auth_mode(json_formatter):
+    """The startup auth mode is surfaced in structured logs."""
+    record = make_record(component="main", auth_mode="jwt")
+    log_data = formatted_log(json_formatter, record)
+
+    assert log_data["auth_mode"] == "jwt"
+
+
+def test_json_formatter_does_not_redact_api_key_mode(json_formatter):
+    """The non-secret api-key mode value is logged verbatim, not redacted."""
+    record = make_record(component="main", auth_mode="api-key")
+    log_data = formatted_log(json_formatter, record)
+
+    assert log_data["auth_mode"] == "api-key"
+
+
 def test_json_formatter_default_correlation_id(json_formatter):
     """Test that JSON formatter defaults correlation_id to '-' when missing."""
     record = make_record(component="test")

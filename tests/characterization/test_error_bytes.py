@@ -98,6 +98,33 @@ def test_forbidden_403_bytes(server_process) -> None:
     assert body == b""
 
 
+def test_unauthorized_401_bytes(authed_server_process) -> None:
+    """A protected path without credentials yields a 401 with a challenge header."""
+
+    raw = send_raw(
+        authed_server_process["host"],
+        authed_server_process["port"],
+        b"GET /files/secret.txt HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+    )
+    status_line, headers, body = parse_response(raw)
+
+    assert status_line == "HTTP/1.1 401 Unauthorized"
+    assert headers["WWW-Authenticate"] == 'ApiKey realm="pyhttpd"'
+    assert_security_headers(headers)
+    assert_request_id(headers)
+    assert headers["Content-Length"] == "0"
+    assert headers["Connection"] == "close"
+    assert "Access-Control-Allow-Origin" not in headers
+    assert set(headers) == {
+        "WWW-Authenticate",
+        *SECURITY_HEADERS,
+        "X-Request-ID",
+        "Content-Length",
+        "Connection",
+    }
+    assert body == b""
+
+
 def test_not_found_404_bytes(server_process) -> None:
     """An unknown route yields a 404 carrying default rate-limit headers."""
 

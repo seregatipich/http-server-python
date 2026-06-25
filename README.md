@@ -12,6 +12,7 @@ Threaded HTTP/1.1 server with echo, user-agent inspection, configurable file IO,
 - **Health check endpoint**: `GET /healthz` returns 200 OK during normal operation and 503 Service Unavailable when draining, enabling zero-downtime deployments.
 - **Gzip negotiation**: Payloads automatically compress when `Accept-Encoding: gzip` advertises a non-zero quality factor.
 - **File uploads and downloads**: `POST /files/<path>` writes raw bytes to the configured directory and `GET /files/<path>` streams content via `Transfer-Encoding: chunked` for large artifacts.
+- **Authentication and authorization**: opt-in api-key or hand-rolled HS256 JWT auth (zero dependencies) with scope-based access control on `/files/*`.
 - **Transport security**: Passing `--cert` and `--key` enables TLS 1.3 termination directly in the server process.
 - **Security headers**: Strict-Transport-Security, Content-Security-Policy, and X-Content-Type-Options are attached to every response, including 404s.
 - **Request validation and sandboxing**: `/files/*` is restricted to the configured root, blocking traversal (`..`) and null bytes; uploads enforce `Content-Length` and reject bodies over `HTTP_SERVER_MAX_BODY_BYTES` (default 5 MiB).
@@ -41,7 +42,9 @@ pyhttpd [--directory <path>] [--host <host>] [--port <port>] \
   [--max-connections <int>] [--max-connections-per-ip <int>] \
   [--rate-limit <int>] [--rate-window-ms <int>] [--burst-capacity <int>] \
   [--rate-limit-dry-run] \
-  [--socket-timeout <seconds>] [--shutdown-grace-seconds <seconds>]
+  [--socket-timeout <seconds>] [--shutdown-grace-seconds <seconds>] \
+  [--auth-mode <none|api-key|jwt>] [--auth-credentials <list>] [--auth-roles <list>] \
+  [--jwt-secret <secret>] [--jwt-issuer <iss>] [--jwt-audience <aud>]
 ```
 
 - `--directory`: root for `/files/*` operations (defaults to the current working directory).
@@ -60,10 +63,44 @@ pyhttpd [--directory <path>] [--host <host>] [--port <port>] \
 - `--socket-timeout` / `HTTP_SERVER_SOCKET_TIMEOUT`: socket timeout in seconds for request processing (default 60).
 - `--shutdown-grace-seconds` / `HTTP_SERVER_SHUTDOWN_GRACE_SECONDS`: grace period in seconds for graceful shutdown (default 30).
 
+- `--auth-mode` / `HTTP_SERVER_AUTH_MODE`: `none` (default), `api-key`, or `jwt`.
+- `--auth-credentials` / `HTTP_SERVER_AUTH_CREDENTIALS`: comma-separated `identity:sha256hex` api-key pairs (store the SHA-256 hex of each key, never the raw key).
+- `--auth-roles` / `HTTP_SERVER_AUTH_ROLES`: comma-separated `identity:scope|scope` role assignments.
+- `--jwt-secret` / `HTTP_SERVER_JWT_SECRET`: shared secret for HS256 verification.
+- `--jwt-issuer` / `HTTP_SERVER_JWT_ISSUER`: expected `iss` claim (optional).
+- `--jwt-audience` / `HTTP_SERVER_JWT_AUDIENCE`: expected `aud` claim (optional).
+
 Environment variables mirror the logging flags:
 
 - `HTTP_SERVER_LOG_LEVEL`
 - `HTTP_SERVER_LOG_DESTINATION`
+
+## Authentication
+
+Authentication is opt-in (`--auth-mode none` by default). When enabled, an auth
+middleware runs after request validation and enforces scope-based access:
+`GET /files/*` requires `files:read` and `POST /files/*` requires `files:write`.
+`/healthz` and CORS preflight requests are always public.
+
+- **api-key** — clients send `Authorization: ApiKey <key>`. Keys are matched by
+  constant-time comparison of their SHA-256 hash, so only hashes live in config.
+- **jwt** — clients send `Authorization: Bearer <token>`. Tokens are verified as
+  HS256 (hand-rolled on the standard library, zero dependencies): the algorithm
+  is pinned to `HS256` (no `alg=none`), the signature is checked with
+  `hmac.compare_digest`, and `exp`/`nbf`/`iss`/`aud` claims are validated. The
+  `sub` claim becomes the identity and the space-delimited `scope` claim its
+  scopes.
+
+Missing or invalid credentials return `401` with a `WWW-Authenticate` challenge;
+an authenticated principal lacking the required scope returns `403`. Credentials
+and secrets are never logged — only the active auth mode is recorded at startup.
+
+```bash
+# api-key example: a read-only "reader" and a read/write "writer"
+pyhttpd --auth-mode api-key \
+  --auth-credentials "reader:$(printf reader-key | shasum -a 256 | cut -d' ' -f1)" \
+  --auth-roles "reader:files:read"
+```
 
 ## Request lifecycle
 

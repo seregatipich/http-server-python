@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -129,6 +130,50 @@ def _limited_server_process(
         "2",
     ]
     yield from _launch_server(host, port, directory, limit_args, log_file=log_file)
+
+
+READER_KEY = "reader-key"
+WRITER_KEY = "writer-key"
+JWT_SECRET = "integration-secret"
+
+
+def _sha256_hex(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+@pytest.fixture(name="authed_server_process")
+def _authed_server_process(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch the server in api-key mode with a reader and a writer identity."""
+
+    host = "127.0.0.1"
+    port = reserve_port(host)
+    directory = tmp_path_factory.mktemp("server-files-authed")
+    log_file = directory / "server.log"
+    auth_args = [
+        "--auth-mode",
+        "api-key",
+        "--auth-credentials",
+        f"reader:{_sha256_hex(READER_KEY)}, writer:{_sha256_hex(WRITER_KEY)}",
+        "--auth-roles",
+        "reader:files:read, writer:files:read|files:write",
+    ]
+    yield from _launch_server(host, port, directory, auth_args, log_file=log_file)
+
+
+@pytest.fixture(name="jwt_server_process")
+def _jwt_server_process(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch the server in JWT mode with a shared HS256 secret."""
+
+    host = "127.0.0.1"
+    port = reserve_port(host)
+    directory = tmp_path_factory.mktemp("server-files-jwt")
+    log_file = directory / "server.log"
+    auth_args = ["--auth-mode", "jwt", "--jwt-secret", JWT_SECRET]
+    yield from _launch_server(host, port, directory, auth_args, log_file=log_file)
 
 
 @pytest.fixture()

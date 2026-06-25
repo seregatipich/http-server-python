@@ -6,6 +6,8 @@ from typing import Optional
 
 from pyhttpd.adapters.logging.redaction import redact_sensitive
 
+_UNREDACTED_KEYS = frozenset({"auth_mode"})
+
 
 class JsonFormatter(logging.Formatter):
     """JSON formatter with stable key ordering for structured logging."""
@@ -49,13 +51,14 @@ class JsonFormatter(logging.Formatter):
             "tls",
             "socket_timeout",
             "shutdown_grace_seconds",
+            "auth_mode",
             "signal",
         ]
 
         for key in extra_keys:
             if hasattr(record, key):
                 value = getattr(record, key)
-                if isinstance(value, str):
+                if isinstance(value, str) and key not in _UNREDACTED_KEYS:
                     value = redact_sensitive(value)
                 log_data[key] = value
 
