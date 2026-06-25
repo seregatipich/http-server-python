@@ -3,6 +3,11 @@
 import os
 
 
+def _env_str(name: str, default: str) -> str:
+    value = os.getenv(name)
+    return value if value is not None else default
+
+
 def _env_int(name: str, default: int) -> int:
     value = os.getenv(name)
     return int(value) if value is not None else default

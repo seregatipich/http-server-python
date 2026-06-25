@@ -7,6 +7,7 @@ import socket
 from dataclasses import dataclass
 from typing import Optional
 
+from pyhttpd.adapters.auth import ApiKeyAuthenticator, JwtAuthenticator
 from pyhttpd.adapters.config.cli_args import ServerConfig
 from pyhttpd.adapters.lifecycle import ServerLifecycle
 from pyhttpd.adapters.logging.setup import configure_logging
@@ -15,7 +16,13 @@ from pyhttpd.adapters.tls import create_server_socket
 from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
 from pyhttpd.adapters.transport.context import WorkerContext
 from pyhttpd.adapters.transport.server import run_server
-from pyhttpd.domain import CorsConfig, LifecycleState, TokenBucketSettings
+from pyhttpd.domain import (
+    AuthConfig,
+    Authenticator,
+    CorsConfig,
+    LifecycleState,
+    TokenBucketSettings,
+)
 
 MAIN_LOGGER = logging.getLogger("http_server.main")
 
@@ -38,6 +45,42 @@ def _create_cors_config(args: argparse.Namespace) -> CorsConfig:
         allow_credentials=args.cors_allow_credentials,
         max_age=args.cors_max_age,
     )
+
+
+def _parse_pairs(raw: str) -> dict[str, str]:
+    """Parse a comma list of identity:value pairs into a mapping."""
+    pairs: dict[str, str] = {}
+    for entry in raw.split(","):
+        identity, separator, value = entry.strip().partition(":")
+        if identity and separator:
+            pairs[identity] = value
+    return pairs
+
+
+def _create_auth_config(args: argparse.Namespace) -> AuthConfig:
+    """Create authentication configuration from CLI arguments."""
+    roles = {
+        identity: [scope for scope in spec.split("|") if scope]
+        for identity, spec in _parse_pairs(args.auth_roles).items()
+    }
+    return AuthConfig(
+        mode=args.auth_mode,
+        credentials=_parse_pairs(args.auth_credentials),
+        roles=roles,
+        jwt_secret=args.jwt_secret,
+        jwt_issuer=args.jwt_issuer or None,
+        jwt_audience=args.jwt_audience or None,
+    )
+
+
+def _create_authenticator(args: argparse.Namespace) -> Optional[Authenticator]:
+    """Create the configured authenticator, or None when auth is disabled."""
+    if args.auth_mode == "none":
+        return None
+    config = _create_auth_config(args)
+    if args.auth_mode == "jwt":
+        return JwtAuthenticator(config)
+    return ApiKeyAuthenticator(config)
 
 
 def _create_rate_limiter(args: argparse.Namespace) -> Optional[TokenBucketLimiter]:
@@ -67,6 +110,7 @@ def _create_worker_context(
         lifecycle=lifecycle,
         config=config,
         cors_config=_create_cors_config(args),
+        authenticator=_create_authenticator(args),
     )
 
 
@@ -125,6 +169,7 @@ def build_server(args: argparse.Namespace) -> Server:
             "tls": bool(args.cert and args.key),
             "socket_timeout": config.socket_timeout,
             "shutdown_grace_seconds": config.shutdown_grace_seconds,
+            "auth_mode": args.auth_mode,
         },
     )
 

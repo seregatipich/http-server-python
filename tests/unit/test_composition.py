@@ -3,17 +3,20 @@
 import socket
 
 from pyhttpd import composition
+from pyhttpd.adapters.auth import ApiKeyAuthenticator, JwtAuthenticator
 from pyhttpd.adapters.config import ServerConfig, parse_cli_args
 from pyhttpd.adapters.ratelimit import TokenBucketLimiter
 from pyhttpd.adapters.transport import ConnectionLimiter, WorkerContext
 from pyhttpd.composition import (
     Server,
+    _create_auth_config,
+    _create_authenticator,
     _create_cors_config,
     _create_rate_limiter,
     _create_worker_context,
     build_server,
 )
-from pyhttpd.domain import CorsConfig
+from pyhttpd.domain import AuthConfig, CorsConfig
 
 
 def _args(tmp_path, extra=None):
@@ -22,6 +25,22 @@ def _args(tmp_path, extra=None):
     if extra:
         argv.extend(extra)
     return parse_cli_args(argv)
+
+
+class _StubLifecycle:
+    """Minimal draining-state stand-in for worker context wiring."""
+
+    def is_draining(self):
+        """Report not draining."""
+        return False
+
+    def should_stop(self):
+        """Report no stop requested."""
+        return False
+
+    def wait_for_workers(self, _timeout):
+        """Report workers joined."""
+        return True
 
 
 def test_create_cors_config_splits_and_strips(tmp_path):
@@ -53,6 +72,55 @@ def test_create_rate_limiter_disabled_when_window_zero(tmp_path):
     """A zero window disables rate limiting."""
     args = _args(tmp_path, ["--rate-limit", "5", "--rate-window-ms", "0"])
     assert _create_rate_limiter(args) is None
+
+
+def test_create_auth_config_parses_credentials_and_roles(tmp_path):
+    """Auth credentials and roles parse into identity-keyed mappings."""
+    args = _args(
+        tmp_path,
+        [
+            "--auth-mode",
+            "api-key",
+            "--auth-credentials",
+            "reader:hashA, writer:hashB",
+            "--auth-roles",
+            "reader:files:read, writer:files:read|files:write",
+        ],
+    )
+    config = _create_auth_config(args)
+    assert isinstance(config, AuthConfig)
+    assert config.mode == "api-key"
+    assert config.credentials == {"reader": "hashA", "writer": "hashB"}
+    assert config.roles == {
+        "reader": ["files:read"],
+        "writer": ["files:read", "files:write"],
+    }
+
+
+def test_create_authenticator_disabled_by_default(tmp_path):
+    """With auth mode none the composition root builds no authenticator."""
+    assert _create_authenticator(_args(tmp_path)) is None
+
+
+def test_create_authenticator_api_key_mode(tmp_path):
+    """Api-key mode builds an ApiKeyAuthenticator."""
+    args = _args(tmp_path, ["--auth-mode", "api-key"])
+    assert isinstance(_create_authenticator(args), ApiKeyAuthenticator)
+
+
+def test_create_authenticator_jwt_mode(tmp_path):
+    """JWT mode builds a JwtAuthenticator."""
+    args = _args(tmp_path, ["--auth-mode", "jwt", "--jwt-secret", "s"])
+    assert isinstance(_create_authenticator(args), JwtAuthenticator)
+
+
+def test_create_worker_context_carries_authenticator(tmp_path):
+    """An enabled auth mode threads the authenticator into the worker context."""
+    args = _args(tmp_path, ["--auth-mode", "api-key"])
+    config = ServerConfig(socket_timeout=1, shutdown_grace_seconds=1)
+    limiter = ConnectionLimiter(args.max_connections, args.max_connections_per_ip)
+    context = _create_worker_context(args, config, _StubLifecycle(), limiter)
+    assert isinstance(context.authenticator, ApiKeyAuthenticator)
 
 
 def test_create_worker_context_wires_collaborators(tmp_path):

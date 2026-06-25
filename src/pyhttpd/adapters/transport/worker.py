@@ -30,6 +30,7 @@ from pyhttpd.adapters.transport.worker_logging import (
     log_worker_error,
 )
 from pyhttpd.application.context import RequestContext
+from pyhttpd.application.middleware.auth import make_auth_middleware
 from pyhttpd.application.middleware.cors import make_cors_middleware
 from pyhttpd.application.middleware.rate_limit import make_rate_limit_middleware
 from pyhttpd.application.middleware.validation import make_validation_middleware
@@ -75,6 +76,10 @@ def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes:
             )
         )
     middlewares.append(make_validation_middleware(ALLOWED_METHODS, max_body_bytes))
+    if context.authenticator is not None:
+        middlewares.append(
+            make_auth_middleware(context.authenticator, WORKER_PORT_LOGGER)
+        )
     return build_chain(middlewares, terminal)
 
 

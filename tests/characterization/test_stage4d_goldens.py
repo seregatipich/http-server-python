@@ -36,6 +36,7 @@ def _bare_context() -> MagicMock:
     context.cors_config = None
     context.rate_limiter = None
     context.connection_limiter = None
+    context.authenticator = None
     return context
 
 

@@ -4,8 +4,8 @@ import argparse
 import os
 from dataclasses import dataclass
 
-from pyhttpd.adapters.config.env import _env_bool, _env_int, _env_list
-from pyhttpd.domain import DEFAULT_MAX_BODY_BYTES
+from pyhttpd.adapters.config.env import _env_bool, _env_int, _env_list, _env_str
+from pyhttpd.domain import DEFAULT_AUTH_MODE, DEFAULT_MAX_BODY_BYTES
 
 MAX_BODY_BYTES = _env_int("HTTP_SERVER_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)
 DEFAULT_MAX_CONNECTIONS = _env_int("HTTP_SERVER_MAX_CONNECTIONS", 200)
@@ -28,6 +28,12 @@ DEFAULT_CORS_EXPOSE_HEADERS = _env_list(
 )
 DEFAULT_CORS_ALLOW_CREDENTIALS = _env_bool("HTTP_SERVER_CORS_ALLOW_CREDENTIALS", False)
 DEFAULT_CORS_MAX_AGE = _env_int("HTTP_SERVER_CORS_MAX_AGE", 86400)
+DEFAULT_AUTH_MODE = _env_str("HTTP_SERVER_AUTH_MODE", DEFAULT_AUTH_MODE)
+DEFAULT_AUTH_CREDENTIALS = _env_str("HTTP_SERVER_AUTH_CREDENTIALS", "")
+DEFAULT_AUTH_ROLES = _env_str("HTTP_SERVER_AUTH_ROLES", "")
+DEFAULT_JWT_SECRET = _env_str("HTTP_SERVER_JWT_SECRET", "")
+DEFAULT_JWT_ISSUER = _env_str("HTTP_SERVER_JWT_ISSUER", "")
+DEFAULT_JWT_AUDIENCE = _env_str("HTTP_SERVER_JWT_AUDIENCE", "")
 
 
 @dataclass
@@ -148,6 +154,41 @@ def _add_cors_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_auth_args(parser: argparse.ArgumentParser) -> None:
+    """Add authentication and authorization arguments."""
+    parser.add_argument(
+        "--auth-mode",
+        choices=["none", "api-key", "jwt"],
+        default=DEFAULT_AUTH_MODE,
+        help="Authentication mode (default: none)",
+    )
+    parser.add_argument(
+        "--auth-credentials",
+        default=DEFAULT_AUTH_CREDENTIALS,
+        help="Comma-separated identity:sha256hex api-key credentials",
+    )
+    parser.add_argument(
+        "--auth-roles",
+        default=DEFAULT_AUTH_ROLES,
+        help="Comma-separated identity:scope|scope role assignments",
+    )
+    parser.add_argument(
+        "--jwt-secret",
+        default=DEFAULT_JWT_SECRET,
+        help="Shared secret for HS256 JWT verification",
+    )
+    parser.add_argument(
+        "--jwt-issuer",
+        default=DEFAULT_JWT_ISSUER,
+        help="Expected JWT issuer (iss) claim",
+    )
+    parser.add_argument(
+        "--jwt-audience",
+        default=DEFAULT_JWT_AUDIENCE,
+        help="Expected JWT audience (aud) claim",
+    )
+
+
 def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     """Return parsed CLI arguments for server configuration."""
     parser = argparse.ArgumentParser(description="HTTP server configuration")
@@ -160,4 +201,5 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     _add_connection_limit_args(parser)
     _add_timeout_args(parser)
     _add_cors_args(parser)
+    _add_auth_args(parser)
     return parser.parse_args(argv)

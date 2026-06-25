@@ -14,3 +14,4 @@ class WorkerContext:
     lifecycle: Optional[Any] = None
     config: Optional[Any] = None
     cors_config: Optional[Any] = None
+    authenticator: Optional[Any] = None
