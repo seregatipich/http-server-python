@@ -35,6 +35,9 @@ DEFAULT_JWT_SECRET = _env_str("HTTP_SERVER_JWT_SECRET", "")
 DEFAULT_JWT_ISSUER = _env_str("HTTP_SERVER_JWT_ISSUER", "")
 DEFAULT_JWT_AUDIENCE = _env_str("HTTP_SERVER_JWT_AUDIENCE", "")
 DEFAULT_METRICS_ENABLED = _env_bool("HTTP_SERVER_METRICS", False)
+DEFAULT_FILE_CACHE_CONTROL = _env_str("HTTP_SERVER_FILE_CACHE_CONTROL", "")
+DEFAULT_FILE_GZIP = _env_bool("HTTP_SERVER_FILE_GZIP", False)
+DEFAULT_FILE_GZIP_MIN_BYTES = _env_int("HTTP_SERVER_FILE_GZIP_MIN_BYTES", 1024)
 
 
 @dataclass
@@ -200,6 +203,27 @@ def _add_observability_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_file_serving_args(parser: argparse.ArgumentParser) -> None:
+    """Add static file serving arguments."""
+    parser.add_argument(
+        "--file-cache-control",
+        default=DEFAULT_FILE_CACHE_CONTROL,
+        help="Cache-Control header value for file responses (empty to omit)",
+    )
+    parser.add_argument(
+        "--file-gzip",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_FILE_GZIP,
+        help="Compress eligible file responses with gzip",
+    )
+    parser.add_argument(
+        "--file-gzip-min-bytes",
+        type=int,
+        default=DEFAULT_FILE_GZIP_MIN_BYTES,
+        help="Minimum file size in bytes before gzip is applied",
+    )
+
+
 def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     """Return parsed CLI arguments for server configuration."""
     parser = argparse.ArgumentParser(description="HTTP server configuration")
@@ -214,4 +238,5 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     _add_cors_args(parser)
     _add_auth_args(parser)
     _add_observability_args(parser)
+    _add_file_serving_args(parser)
     return parser.parse_args(argv)

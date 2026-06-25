@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 
 @dataclass
-class WorkerContext:
+class WorkerContext:  # pylint: disable=too-many-instance-attributes
     """Dependencies shared across handler threads."""
 
     directory: str
@@ -16,3 +16,4 @@ class WorkerContext:
     cors_config: Optional[Any] = None
     authenticator: Optional[Any] = None
     metrics_sink: Optional[Any] = None
+    file_options: Optional[Any] = None

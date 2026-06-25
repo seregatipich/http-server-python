@@ -35,8 +35,8 @@ def test_get_missing_file_raises_not_found(ctx, tmp_path):
         handler(make_request(path="/files/absent.txt"), ctx)
 
 
-def test_get_existing_file_streams_with_chunking(ctx, tmp_path):
-    """GET on an existing file streams its bytes via a chunked body iterator."""
+def test_get_existing_file_streams_with_content_length(ctx, tmp_path):
+    """GET on an existing file streams its bytes with caching validators."""
     payload = b"the quick brown fox" * 8
     (tmp_path / "data.txt").write_bytes(payload)
     handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
@@ -45,11 +45,15 @@ def test_get_existing_file_streams_with_chunking(ctx, tmp_path):
 
     assert isinstance(response, HttpResponse)
     assert response.status_line == "HTTP/1.1 200 OK"
-    assert response.use_chunked is True
+    assert response.use_chunked is False
+    assert response.content_length == len(payload)
     assert response.body_iter is not None
     assert b"".join(response.body_iter) == payload
     expected_type, _ = mimetypes.guess_type("data.txt")
     assert response.headers["Content-Type"] == expected_type
+    assert response.headers["Accept-Ranges"] == "bytes"
+    assert response.headers["ETag"]
+    assert response.headers["Last-Modified"]
 
 
 def test_post_persists_bytes_and_creates_parent_dirs(ctx, tmp_path):
@@ -77,8 +81,8 @@ def test_unsupported_method_on_file_raises_method_not_allowed(ctx, tmp_path):
     (tmp_path / "data.txt").write_bytes(b"x")
     handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
     with pytest.raises(MethodNotAllowed) as exc_info:
-        handler(make_request(method="DELETE", path="/files/data.txt"), ctx)
-    assert exc_info.value.allowed == ("GET", "POST")
+        handler(make_request(method="PATCH", path="/files/data.txt"), ctx)
+    assert exc_info.value.allowed == ("DELETE", "GET", "HEAD", "POST", "PUT")
 
 
 def test_index_handler_returns_empty_when_document_missing(ctx, tmp_path):

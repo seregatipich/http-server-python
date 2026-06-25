@@ -166,13 +166,17 @@ def test_method_not_allowed_405_bytes(server_process) -> None:
     status_line, headers, body = parse_response(raw)
 
     assert status_line == "HTTP/1.1 405 Method Not Allowed"
-    assert headers["Allow"] == "GET, OPTIONS, POST"
+    assert headers["Allow"] == "GET, HEAD"
     assert_security_headers(headers)
     assert_request_id(headers)
+    assert headers["RateLimit-Limit"] == "50"
     assert headers["Content-Length"] == "0"
     assert headers["Connection"] == "close"
     assert set(headers) == {
         "Allow",
+        "RateLimit-Limit",
+        "RateLimit-Remaining",
+        "RateLimit-Reset",
         *SECURITY_HEADERS,
         "X-Request-ID",
         "Content-Length",

@@ -9,7 +9,7 @@ def _format_buckets(buckets: tuple[float, ...]) -> list[str]:
     ]
 
 
-class MetricsRegistry:
+class MetricsRegistry:  # pylint: disable=too-many-instance-attributes
     """Holds counters, a latency histogram, and a gauge; renders exposition text."""
 
     def __init__(self, buckets: tuple[float, ...] = HISTOGRAM_BUCKETS_SECONDS) -> None:

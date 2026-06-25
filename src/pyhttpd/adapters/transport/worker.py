@@ -3,6 +3,7 @@
 import socket
 import threading
 import time
+from dataclasses import replace
 
 from pyhttpd.adapters.logging.correlation_adapter import (
     clear_correlation_id,
@@ -58,6 +59,20 @@ def _route_label(request: HttpRequest) -> str:
     return request.path
 
 
+def _strip_body_for_head(response: HttpResponse) -> HttpResponse:
+    """Return a HEAD response: same headers and length, no body."""
+    length = response.content_length
+    if length is None and not response.use_chunked:
+        length = len(response.body)
+    return replace(
+        response,
+        body=b"",
+        body_iter=None,
+        use_chunked=False,
+        content_length=length,
+    )
+
+
 def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes: int):
     """Assemble the application middleware chain over the default router."""
     router = make_default_router(
@@ -66,13 +81,18 @@ def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes:
         WORKER_PORT_LOGGER,
         context.cors_config,
         context.metrics_sink,
+        context.file_options,
     )
 
     def terminal(request: HttpRequest, ctx: RequestContext) -> HttpResponse:
+        is_head = request.method == "HEAD"
+        dispatch_request = replace(request, method="GET") if is_head else request
         try:
-            response = router.dispatch(request, ctx)
+            response = router.dispatch(dispatch_request, ctx)
         except HttpError as error:
             response = ErrorMapper.to_response(error, request, context.cors_config)
+        if is_head:
+            response = _strip_body_for_head(response)
         if ctx.rate_decision is not None:
             response.headers.update(ctx.rate_decision.headers)
         return response

@@ -24,6 +24,7 @@ class HttpResponse:
     close_connection: bool
     body_iter: Optional[Iterable[bytes]] = None
     use_chunked: bool = False
+    content_length: Optional[int] = None
 
 
 def should_close(headers: dict[str, str]) -> bool:

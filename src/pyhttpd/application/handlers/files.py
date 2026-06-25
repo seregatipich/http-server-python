@@ -1,7 +1,9 @@
 """Handlers for static file serving and the sandbox index."""
 
+import gzip
 import logging
 import mimetypes
+import os
 from pathlib import Path
 from typing import Callable, Iterator, Optional
 
@@ -11,7 +13,9 @@ from pyhttpd.application.rendering import empty_response
 from pyhttpd.domain import (
     FILES_ENDPOINT_PREFIX,
     SECURITY_HEADERS,
+    ByteRange,
     CorsConfig,
+    FileServingOptions,
     Forbidden,
     ForbiddenPath,
     HttpRequest,
@@ -19,12 +23,18 @@ from pyhttpd.domain import (
     Logger,
     MethodNotAllowed,
     NotFound,
+    RangeNotSatisfiable,
+    compute_etag,
+    http_date,
+    is_not_modified,
+    parse_range,
     resolve_sandbox_path,
     should_close,
 )
 
 RouteHandler = Callable[[HttpRequest, RequestContext], HttpResponse]
-FILE_ALLOWED_METHODS = ("GET", "POST")
+FILE_ALLOWED_METHODS = ("DELETE", "GET", "HEAD", "POST", "PUT")
+_DEFAULT_OPTIONS = FileServingOptions()
 
 
 def _is_invalid_file_route(remainder: str) -> bool:
@@ -54,6 +64,20 @@ def _stream_file(
             yield chunk
 
 
+def _stream_range(
+    resolved_path: Path, byte_range: ByteRange, chunk_size: int = 65536
+) -> Iterator[bytes]:
+    remaining = byte_range.length
+    with open(resolved_path, "rb") as file_handle:
+        file_handle.seek(byte_range.start)
+        while remaining > 0:
+            chunk = file_handle.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
+
+
 def _streaming_file_response(
     request: HttpRequest,
     resolved_path: Path,
@@ -65,12 +89,6 @@ def _streaming_file_response(
         **SECURITY_HEADERS,
     }
     apply_cors_headers(headers, request, cors_config)
-    logger.log(
-        logging.INFO,
-        "file_read_complete",
-        path=resolved_path.as_posix(),
-        method=request.method,
-    )
     return HttpResponse(
         "HTTP/1.1 200 OK",
         headers,
@@ -81,36 +99,147 @@ def _streaming_file_response(
     )
 
 
+def _gzip_eligible(content_type: str, size: int, options: FileServingOptions) -> bool:
+    if not options.gzip or size < options.gzip_min_bytes:
+        return False
+    return any(content_type.startswith(prefix) for prefix in options.gzip_types)
+
+
+def _base_file_headers(
+    request: HttpRequest,
+    content_type: str,
+    etag: str,
+    mtime_epoch: float,
+    cors_config: Optional[CorsConfig],
+    options: FileServingOptions,
+) -> dict[str, str]:
+    headers = {
+        "Content-Type": content_type,
+        "ETag": etag,
+        "Last-Modified": http_date(mtime_epoch),
+        "Accept-Ranges": "bytes",
+        **SECURITY_HEADERS,
+    }
+    if options.cache_control:
+        headers["Cache-Control"] = options.cache_control
+    apply_cors_headers(headers, request, cors_config)
+    return headers
+
+
+def _not_modified_response(
+    request: HttpRequest, headers: dict[str, str]
+) -> HttpResponse:
+    headers = {
+        key: value
+        for key, value in headers.items()
+        if key in {"ETag", "Last-Modified", "Cache-Control", *SECURITY_HEADERS}
+    }
+    return HttpResponse(
+        "HTTP/1.1 304 Not Modified",
+        headers,
+        b"",
+        should_close(request.headers),
+        content_length=0,
+    )
+
+
+def _range_response(
+    request: HttpRequest,
+    resolved_path: Path,
+    byte_range: ByteRange,
+    headers: dict[str, str],
+    file_size: int,
+) -> HttpResponse:
+    headers = dict(headers)
+    headers["Content-Range"] = f"bytes {byte_range.start}-{byte_range.end}/{file_size}"
+    return HttpResponse(
+        "HTTP/1.1 206 Partial Content",
+        headers,
+        b"",
+        should_close(request.headers),
+        body_iter=_stream_range(resolved_path, byte_range),
+        content_length=byte_range.length,
+    )
+
+
+def _gzip_response(
+    request: HttpRequest,
+    resolved_path: Path,
+    headers: dict[str, str],
+) -> HttpResponse:
+    compressed = gzip.compress(resolved_path.read_bytes())
+    headers = dict(headers)
+    headers["Content-Encoding"] = "gzip"
+    return HttpResponse(
+        "HTTP/1.1 200 OK",
+        headers,
+        compressed,
+        should_close(request.headers),
+        content_length=len(compressed),
+    )
+
+
+def _full_file_response(
+    request: HttpRequest,
+    resolved_path: Path,
+    logger: Logger,
+    headers: dict[str, str],
+    file_size: int,
+) -> HttpResponse:
+    return HttpResponse(
+        "HTTP/1.1 200 OK",
+        headers,
+        b"",
+        should_close(request.headers),
+        body_iter=_stream_file(resolved_path, logger),
+        content_length=file_size,
+    )
+
+
 def _get_file_response(
     request: HttpRequest,
     resolved_path: Path,
     logger: Logger,
-    cors_config: Optional[CorsConfig] = None,
+    cors_config: Optional[CorsConfig],
+    options: FileServingOptions,
 ) -> HttpResponse:
-    if resolved_path.exists() and resolved_path.is_file():
-        logger.log(logging.DEBUG, "file_read_started", path=resolved_path.as_posix())
-        return _streaming_file_response(request, resolved_path, logger, cors_config)
-    logger.log(
-        logging.INFO,
-        "file_not_found",
-        path=resolved_path.as_posix(),
-        method=request.method,
+    if not (resolved_path.exists() and resolved_path.is_file()):
+        logger.log(logging.INFO, "file_not_found", path=resolved_path.as_posix())
+        raise NotFound("file not found")
+
+    stat_result = os.stat(resolved_path)
+    file_size = stat_result.st_size
+    content_type = _content_type_for_path(resolved_path)
+    etag = compute_etag(file_size, stat_result.st_mtime_ns)
+    headers = _base_file_headers(
+        request, content_type, etag, stat_result.st_mtime, cors_config, options
     )
-    raise NotFound("file not found")
+
+    if is_not_modified(etag, stat_result.st_mtime, request.headers):
+        return _not_modified_response(request, headers)
+
+    range_header = request.headers.get("range", "")
+    if range_header:
+        parsed = parse_range(range_header, file_size)
+        if isinstance(parsed, ByteRange):
+            return _range_response(request, resolved_path, parsed, headers, file_size)
+        if parsed is not None:
+            raise RangeNotSatisfiable(file_size)
+
+    if _gzip_eligible(content_type, file_size, options):
+        return _gzip_response(request, resolved_path, headers)
+
+    logger.log(logging.INFO, "file_read_complete", path=resolved_path.as_posix())
+    return _full_file_response(request, resolved_path, logger, headers, file_size)
 
 
-def _post_file_response(
+def _write_file_response(
     request: HttpRequest,
     resolved_path: Path,
     logger: Logger,
-    cors_config: Optional[CorsConfig] = None,
+    cors_config: Optional[CorsConfig],
+    status_line: str,
 ) -> HttpResponse:
-    logger.log(
-        logging.DEBUG,
-        "file_write_started",
-        path=resolved_path.as_posix(),
-        bytes=len(request.body),
-    )
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
     with open(resolved_path, "wb") as file_handle:
         file_handle.write(request.body)
@@ -123,11 +252,41 @@ def _post_file_response(
     )
     headers = SECURITY_HEADERS.copy()
     apply_cors_headers(headers, request, cors_config)
+    return HttpResponse(status_line, headers, b"", should_close(request.headers))
+
+
+def _put_file_response(
+    request: HttpRequest,
+    resolved_path: Path,
+    logger: Logger,
+    cors_config: Optional[CorsConfig],
+) -> HttpResponse:
+    if resolved_path.is_dir():
+        raise Forbidden("directory access denied")
+    status_line = (
+        "HTTP/1.1 204 No Content" if resolved_path.exists() else "HTTP/1.1 201 Created"
+    )
+    return _write_file_response(
+        request, resolved_path, logger, cors_config, status_line
+    )
+
+
+def _delete_file_response(
+    request: HttpRequest,
+    resolved_path: Path,
+    logger: Logger,
+    cors_config: Optional[CorsConfig],
+) -> HttpResponse:
+    if resolved_path.is_dir():
+        raise Forbidden("directory access denied")
+    if not resolved_path.exists():
+        raise NotFound("file not found")
+    resolved_path.unlink()
+    logger.log(logging.INFO, "file_deleted", path=resolved_path.as_posix())
+    headers = SECURITY_HEADERS.copy()
+    apply_cors_headers(headers, request, cors_config)
     return HttpResponse(
-        "HTTP/1.1 201 Created",
-        headers,
-        b"",
-        should_close(request.headers),
+        "HTTP/1.1 204 No Content", headers, b"", should_close(request.headers)
     )
 
 
@@ -146,9 +305,13 @@ def _unsupported_file_method(
 
 
 def make_files_handler(
-    directory: str, logger: Logger, cors_config: Optional[CorsConfig] = None
+    directory: str,
+    logger: Logger,
+    cors_config: Optional[CorsConfig] = None,
+    options: Optional[FileServingOptions] = None,
 ) -> RouteHandler:
     """Build a handler serving and writing files under the sandbox directory."""
+    options = options or _DEFAULT_OPTIONS
 
     def handle(request: HttpRequest, _ctx: RequestContext) -> HttpResponse:
         remainder = request.path[len(FILES_ENDPOINT_PREFIX) :]
@@ -158,17 +321,20 @@ def make_files_handler(
         try:
             resolved_path = resolve_sandbox_path(directory, remainder)
         except ForbiddenPath as exc:
-            logger.log(
-                logging.WARNING,
-                "forbidden_path",
-                path=remainder,
-                method=request.method,
-            )
+            logger.log(logging.WARNING, "forbidden_path", path=remainder)
             raise Forbidden("forbidden path") from exc
         if request.method == "GET":
-            return _get_file_response(request, resolved_path, logger, cors_config)
+            return _get_file_response(
+                request, resolved_path, logger, cors_config, options
+            )
         if request.method == "POST":
-            return _post_file_response(request, resolved_path, logger, cors_config)
+            return _write_file_response(
+                request, resolved_path, logger, cors_config, "HTTP/1.1 201 Created"
+            )
+        if request.method == "PUT":
+            return _put_file_response(request, resolved_path, logger, cors_config)
+        if request.method == "DELETE":
+            return _delete_file_response(request, resolved_path, logger, cors_config)
         return _unsupported_file_method(request, resolved_path, logger)
 
     return handle
@@ -183,6 +349,8 @@ def make_index_handler(
     """Build a handler serving the sandbox index document."""
 
     def handle(request: HttpRequest, _ctx: RequestContext) -> HttpResponse:
+        if request.method != "GET":
+            raise MethodNotAllowed(("GET", "HEAD"))
         try:
             resolved_path = resolve_sandbox_path(directory, document_name)
         except ForbiddenPath as exc:

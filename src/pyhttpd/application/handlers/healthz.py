@@ -11,6 +11,7 @@ from pyhttpd.domain import (
     HttpRequest,
     HttpResponse,
     Logger,
+    MethodNotAllowed,
 )
 
 RouteHandler = Callable[[HttpRequest, RequestContext], HttpResponse]
@@ -22,7 +23,9 @@ def make_healthz_handler(
 ) -> RouteHandler:
     """Build a handler reporting server health, signalling 503 while draining."""
 
-    def handle(_request: HttpRequest, _ctx: RequestContext) -> HttpResponse:
+    def handle(request: HttpRequest, _ctx: RequestContext) -> HttpResponse:
+        if request.method != "GET":
+            raise MethodNotAllowed(("GET", "HEAD"))
         is_draining = (
             draining_state.is_draining() if draining_state is not None else False
         )

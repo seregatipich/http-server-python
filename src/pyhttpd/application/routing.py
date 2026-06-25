@@ -13,6 +13,7 @@ from pyhttpd.domain import (
     FILES_ENDPOINT_PREFIX,
     CorsConfig,
     DrainingState,
+    FileServingOptions,
     HttpRequest,
     HttpResponse,
     Logger,
@@ -57,13 +58,14 @@ def make_default_router(
     logger: Logger,
     cors_config: Optional[CorsConfig] = None,
     metrics_sink: Optional[MetricsSink] = None,
+    file_options: Optional[FileServingOptions] = None,
 ) -> Router:
     """Wire the default route table in legacy match order."""
     healthz = make_healthz_handler(draining_state, logger)
     index = make_index_handler(directory, logger, cors_config)
     echo = make_echo_handler(logger, cors_config)
     user_agent = make_user_agent_handler(logger, cors_config)
-    files = make_files_handler(directory, logger, cors_config)
+    files = make_files_handler(directory, logger, cors_config, file_options)
     routes = [
         Route(lambda request: request.path == "/healthz", healthz),
         Route(lambda request: request.path == "/", index),

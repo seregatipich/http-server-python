@@ -79,6 +79,17 @@ class RateLimited(HttpError):
         self.decision = decision
 
 
+class RangeNotSatisfiable(HttpError):
+    """Raised when a requested byte range cannot be satisfied."""
+
+    status = 416
+    reason = "Range Not Satisfiable"
+
+    def __init__(self, file_size: int) -> None:
+        super().__init__()
+        self.file_size = file_size
+
+
 class ServiceUnavailable(HttpError):
     """Raised when the server cannot currently handle the request."""
 

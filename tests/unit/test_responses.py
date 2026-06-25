@@ -73,13 +73,17 @@ def test_build_response_echo_respects_gzip(tmp_path: Path) -> None:
 
 
 def test_file_get_streams_existing_file(tmp_path: Path) -> None:
-    """Files endpoint should stream bytes via chunked encoding."""
+    """Files endpoint should stream bytes with a known Content-Length."""
 
     file_path = tmp_path / "data.txt"
     file_path.write_bytes(b"payload")
     response = route_request(make_request(f"/files/{file_path.name}"), str(tmp_path))
-    assert response.use_chunked
+    assert response.use_chunked is False
+    assert response.content_length == len(b"payload")
     assert response.body_iter is not None
+    assert b"".join(response.body_iter) == b"payload"
+    assert response.headers["ETag"]
+    assert response.headers["Accept-Ranges"] == "bytes"
 
 
 def test_file_post_persists_payload(tmp_path: Path) -> None:
@@ -103,7 +107,7 @@ def test_file_regular_options_returns_method_not_allowed(tmp_path: Path) -> None
         str(tmp_path),
     )
     assert response.status_line == "HTTP/1.1 405 Method Not Allowed"
-    assert response.headers["Allow"] == "GET, POST"
+    assert response.headers["Allow"] == "DELETE, GET, HEAD, POST, PUT"
 
 
 def make_decision(reset_seconds: float) -> RateLimitDecision:

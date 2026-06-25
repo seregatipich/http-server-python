@@ -57,10 +57,10 @@ def test_echo_responds_with_gzip_when_requested(base_url: str) -> None:
     assert gzip.decompress(payload) == b"zip"
 
 
-def test_file_round_trip_uses_chunked_transfer(
+def test_file_round_trip_uses_content_length(
     base_url: str, server_process: "ServerProcessInfo"
 ) -> None:
-    """Uploading a file then reading it back should use chunked transfer."""
+    """Uploading a file then reading it back uses a sized response."""
 
     filename = "payload.txt"
     payload = b"file-body"
@@ -74,7 +74,9 @@ def test_file_round_trip_uses_chunked_transfer(
     get_response = requests.get(f"{base_url}/files/{filename}", timeout=5)
     assert get_response.status_code == 200
     assert get_response.content == payload
-    assert get_response.headers.get("Transfer-Encoding") == "chunked"
+    assert get_response.headers.get("Content-Length") == str(len(payload))
+    assert get_response.headers.get("Accept-Ranges") == "bytes"
+    assert "Transfer-Encoding" not in get_response.headers
 
     stored_path = Path(server_process["directory"]) / filename
     assert stored_path.read_bytes() == payload
@@ -158,7 +160,7 @@ def test_cors_file_get_with_origin(
     assert response.status_code == 200
     assert response.content == payload
     assert response.headers.get("Access-Control-Allow-Origin") == "*"
-    assert response.headers.get("Transfer-Encoding") == "chunked"
+    assert response.headers.get("Content-Length") == str(len(payload))
 
 
 def test_cors_not_found_with_origin(base_url: str) -> None:

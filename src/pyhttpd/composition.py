@@ -21,6 +21,7 @@ from pyhttpd.domain import (
     AuthConfig,
     Authenticator,
     CorsConfig,
+    FileServingOptions,
     LifecycleState,
     MetricsSink,
     TokenBucketSettings,
@@ -104,6 +105,15 @@ def _create_metrics_sink(args: argparse.Namespace) -> Optional[MetricsSink]:
     return LockingMetricsSink() if args.metrics else None
 
 
+def _create_file_options(args: argparse.Namespace) -> FileServingOptions:
+    """Create static file serving options from CLI arguments."""
+    return FileServingOptions(
+        cache_control=args.file_cache_control,
+        gzip=args.file_gzip,
+        gzip_min_bytes=args.file_gzip_min_bytes,
+    )
+
+
 def _create_worker_context(
     args: argparse.Namespace,
     config: ServerConfig,
@@ -120,6 +130,7 @@ def _create_worker_context(
         cors_config=_create_cors_config(args),
         authenticator=_create_authenticator(args),
         metrics_sink=metrics_sink,
+        file_options=_create_file_options(args),
     )
 
 

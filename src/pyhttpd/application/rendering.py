@@ -19,6 +19,7 @@ from pyhttpd.domain import (
     Logger,
     MethodNotAllowed,
     NotFound,
+    RangeNotSatisfiable,
     RateLimitDecision,
     RateLimited,
     RequestEntityTooLarge,
@@ -162,6 +163,8 @@ def make_text_handler(
     """Build a text/plain route handler that logs a debug event."""
 
     def handle(request: HttpRequest, _ctx: RequestContext) -> HttpResponse:
+        if request.method != "GET":
+            raise MethodNotAllowed(("GET", "HEAD"))
         content = extract(request)
         fields = {"content_length": len(content)} if log_content_length else {}
         logger.log(logging.DEBUG, log_event, **fields)
@@ -307,6 +310,22 @@ def method_not_allowed_response(
     )
 
 
+def range_not_satisfiable_response(
+    file_size: int,
+    request: Optional[HttpRequest],
+    cors_config: Optional[CorsConfig],
+    security_headers: dict[str, str],
+) -> HttpResponse:
+    """Produce a 416 response advertising the valid byte extent."""
+    return _request_response(
+        "HTTP/1.1 416 Range Not Satisfiable",
+        request,
+        cors_config,
+        security_headers,
+        extra_headers={"Content-Range": f"bytes */{file_size}"},
+    )
+
+
 def internal_error_response(
     request: Optional[HttpRequest], security_headers: dict[str, str]
 ) -> HttpResponse:
@@ -344,6 +363,10 @@ class ErrorMapper:
             )
         if isinstance(error, RequestEntityTooLarge):
             return entity_too_large_response(SECURITY_HEADERS)
+        if isinstance(error, RangeNotSatisfiable):
+            return range_not_satisfiable_response(
+                error.file_size, request, cors_config, SECURITY_HEADERS
+            )
         if isinstance(error, RateLimited):
             return rate_limited_response(error.decision, request, SECURITY_HEADERS)
         if isinstance(error, ServiceUnavailable):

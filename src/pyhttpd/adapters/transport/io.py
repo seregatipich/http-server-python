@@ -145,6 +145,8 @@ def _response_headers(response: HttpResponse) -> dict[str, str]:
         headers["X-Request-ID"] = correlation_id
     if response.use_chunked:
         headers["Transfer-Encoding"] = "chunked"
+    elif response.content_length is not None:
+        headers["Content-Length"] = str(response.content_length)
     else:
         headers["Content-Length"] = str(len(response.body))
     if response.close_connection:
@@ -179,6 +181,11 @@ def send_response(client_socket: socket.socket, response: HttpResponse) -> None:
     header_block = _header_block(response.status_line, _response_headers(response))
     if response.use_chunked and response.body_iter is not None:
         _send_chunked_response(client_socket, header_block, response)
+    elif response.body_iter is not None:
+        client_socket.sendall(header_block)
+        for chunk in response.body_iter:
+            if chunk:
+                client_socket.sendall(chunk)
     else:
         client_socket.sendall(header_block + response.body)
     IO_LOGGER.debug(

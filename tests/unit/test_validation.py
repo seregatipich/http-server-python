@@ -61,7 +61,7 @@ def test_validate_request_allows_whitelisted_methods():
 
 def test_validate_request_rejects_unknown_method():
     """Reject methods outside the allowlist."""
-    request = make_request("/", method="DELETE")
+    request = make_request("/", method="PATCH")
     with pytest.raises(MethodNotAllowed) as exc_info:
         run_validation(request)
     for method in ALLOWED_METHODS:

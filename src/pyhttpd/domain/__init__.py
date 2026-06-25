@@ -1,5 +1,6 @@
 """Public domain API for HTTP server internals."""
 
+from pyhttpd.domain.byte_range import UNSATISFIABLE_RANGE, ByteRange, parse_range
 from pyhttpd.domain.config import (
     ALLOWED_METHODS,
     DEFAULT_MAX_BODY_BYTES,
@@ -7,6 +8,7 @@ from pyhttpd.domain.config import (
     SECURITY_HEADERS,
     AuthConfig,
     CorsConfig,
+    FileServingOptions,
 )
 from pyhttpd.domain.errors import (
     BadRequest,
@@ -16,10 +18,18 @@ from pyhttpd.domain.errors import (
     InternalServerError,
     MethodNotAllowed,
     NotFound,
+    RangeNotSatisfiable,
     RateLimited,
     RequestEntityTooLarge,
     ServiceUnavailable,
     Unauthorized,
+)
+from pyhttpd.domain.file_metadata import (
+    FileMetadata,
+    compute_etag,
+    http_date,
+    is_not_modified,
+    parse_http_date,
 )
 from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
 from pyhttpd.domain.metrics import HISTOGRAM_BUCKETS_SECONDS, MetricsSink
@@ -51,9 +61,19 @@ __all__ = [
     "SECURITY_HEADERS",
     "AuthConfig",
     "Authenticator",
+    "ByteRange",
     "CorsConfig",
     "BadRequest",
     "Clock",
+    "FileMetadata",
+    "FileServingOptions",
+    "RangeNotSatisfiable",
+    "UNSATISFIABLE_RANGE",
+    "compute_etag",
+    "http_date",
+    "is_not_modified",
+    "parse_http_date",
+    "parse_range",
     "Forbidden",
     "ForbiddenPath",
     "HttpError",

@@ -5,7 +5,7 @@ from typing import Optional
 
 DEFAULT_MAX_BODY_BYTES = 5 * 1024 * 1024
 FILES_ENDPOINT_PREFIX = "/files/"
-ALLOWED_METHODS = {"GET", "POST", "OPTIONS"}
+ALLOWED_METHODS = {"GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"}
 SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
     "Content-Security-Policy": "default-src 'self'",
@@ -23,6 +23,21 @@ class CorsConfig:
     expose_headers: list[str]
     allow_credentials: bool
     max_age: int
+
+
+@dataclass(frozen=True)
+class FileServingOptions:
+    """Tuning for static file responses (caching and compression)."""
+
+    cache_control: str = ""
+    gzip: bool = False
+    gzip_min_bytes: int = 1024
+    gzip_types: tuple[str, ...] = (
+        "text/",
+        "application/json",
+        "application/javascript",
+        "image/svg+xml",
+    )
 
 
 @dataclass

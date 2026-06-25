@@ -20,8 +20,8 @@ def test_files_endpoint_prefix_value() -> None:
 
 
 def test_allowed_methods_exact_set() -> None:
-    """ALLOWED_METHODS contains exactly GET, POST, and OPTIONS."""
-    assert ALLOWED_METHODS == {"GET", "POST", "OPTIONS"}
+    """ALLOWED_METHODS contains the supported HTTP method whitelist."""
+    assert ALLOWED_METHODS == {"GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"}
 
 
 def test_security_headers_exact_mapping() -> None:
