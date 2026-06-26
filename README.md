@@ -110,6 +110,8 @@ pyhttpd --auth-mode api-key \
    - Each accepted client runs inside its own daemon `threading.Thread`, enabling keep-alive sessions.
 2. **Request read and validation**
    - `_read_request_with_validation()` reads bytes with a bounded buffer, enforces `HTTP_SERVER_MAX_BODY_BYTES`, and surfaces structured parser errors.
+   - Request bodies are framed by `Content-Length` only; a `Transfer-Encoding` header or conflicting `Content-Length` values are rejected with `400` to foreclose request-smuggling desynchronization (RFC 9112 §6.3), and `Content-Length` must be canonical ASCII digits.
+   - The header block is capped at 64 KiB, so a client streaming headers without a terminating blank line is cut off with `413` instead of exhausting memory.
    - `validate_request()` whitelists HTTP methods, checks required headers, blocks traversal/null-bytes, and ensures `/files/*` paths stay under the configured root.
 3. **Rate limiting**
    - `TokenBucketLimiter.consume()` enforces the configured window, returns `RateLimitDecision`, and injects draft `RateLimit-*` headers whether the request is allowed or logged in dry-run.
@@ -199,8 +201,12 @@ default, so it never appears unless explicitly enabled.
 ## API documentation
 
 The full endpoint surface — methods, status codes, conditional/range behavior,
-auth schemes, and response headers — is described in an OpenAPI 3.1 spec at
-[`docs/openapi.yaml`](docs/openapi.yaml).
+auth schemes, and response headers — is described in an OpenAPI 3.1 spec rooted
+at [`docs/openapi.yaml`](docs/openapi.yaml), which references the path items in
+[`docs/openapi.paths.yaml`](docs/openapi.paths.yaml) and the reusable parameters,
+headers, and responses in
+[`docs/openapi.components.yaml`](docs/openapi.components.yaml). The split spec is
+validated end-to-end in `tests/unit/test_openapi_spec.py`.
 
 ## Deployment
 

@@ -8,13 +8,8 @@ import pytest
 
 from pyhttpd.adapters.transport import WorkerContext, handle_client
 from pyhttpd.application import RequestContext, make_index_handler
-from pyhttpd.domain import Forbidden, ForbiddenPath, HttpRequest
-
-SECURITY_HEADERS = {
-    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
-    "Content-Security-Policy": "default-src 'self'",
-    "X-Content-Type-Options": "nosniff",
-}
+from pyhttpd.domain import SECURITY_HEADERS, Forbidden, ForbiddenPath, HttpRequest
+from tests.characterization.raw_client import parse_response
 
 
 def _capturing_socket(request_bytes: bytes) -> tuple[MagicMock, list[bytes]]:
@@ -40,18 +35,6 @@ def _bare_context() -> MagicMock:
     return context
 
 
-def _parse(raw: bytes) -> tuple[str, dict[str, str], bytes]:
-    """Split a raw HTTP response into status line, header map, and body bytes."""
-    header_block, body = raw.split(b"\r\n\r\n", 1)
-    lines = header_block.split(b"\r\n")
-    status_line = lines[0].decode("latin-1")
-    headers: dict[str, str] = {}
-    for line in lines[1:]:
-        name, _, value = line.partition(b": ")
-        headers[name.decode("latin-1")] = value.decode("latin-1")
-    return status_line, headers, body
-
-
 class _BoomRouter:
     """Router that fails with a non-HttpError to exercise the 500 path."""
 
@@ -72,7 +55,7 @@ def test_unexpected_error_returns_500() -> None:
     ):
         handle_client(client_socket, ("127.0.0.1", 5555), context)
 
-    status_line, headers, body = _parse(b"".join(sent))
+    status_line, headers, body = parse_response(b"".join(sent))
 
     assert status_line == "HTTP/1.1 500 Internal Server Error"
     for name, expected in SECURITY_HEADERS.items():
@@ -96,7 +79,7 @@ def test_index_traversal_forbidden_403() -> None:
     ):
         handle_client(client_socket, ("127.0.0.1", 5556), context)
 
-    status_line, headers, body = _parse(b"".join(sent))
+    status_line, headers, body = parse_response(b"".join(sent))
 
     assert status_line == "HTTP/1.1 403 Forbidden"
     for name, expected in SECURITY_HEADERS.items():

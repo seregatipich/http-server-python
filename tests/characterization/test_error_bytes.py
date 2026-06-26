@@ -8,31 +8,13 @@ import time
 
 import pytest
 
-from tests.characterization.raw_client import send_raw
+from pyhttpd.domain import SECURITY_HEADERS
+from tests.characterization.raw_client import parse_response, send_raw
 
 pytestmark = pytest.mark.integration
 
-SECURITY_HEADERS = {
-    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
-    "Content-Security-Policy": "default-src 'self'",
-    "X-Content-Type-Options": "nosniff",
-}
-
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]+$")
 RATE_LIMIT_RESET_PATTERN = re.compile(r"^\d+(\.\d+)?$")
-
-
-def parse_response(raw_response: bytes) -> tuple[str, dict[str, str], bytes]:
-    """Split a raw HTTP response into status line, header map, and body bytes."""
-
-    header_block, body = raw_response.split(b"\r\n\r\n", 1)
-    lines = header_block.split(b"\r\n")
-    status_line = lines[0].decode("latin-1")
-    headers: dict[str, str] = {}
-    for line in lines[1:]:
-        name, _, value = line.partition(b": ")
-        headers[name.decode("latin-1")] = value.decode("latin-1")
-    return status_line, headers, body
 
 
 def assert_request_id(headers: dict[str, str]) -> None:
@@ -49,6 +31,26 @@ def assert_security_headers(headers: dict[str, str]) -> None:
         assert headers[name] == expected
 
 
+def assert_empty_body_envelope(
+    headers: dict[str, str],
+    body: bytes,
+    *,
+    extra_headers: frozenset[str] = frozenset(),
+) -> None:
+    """Pin the standard empty-body error envelope: framing, header set, no body."""
+
+    assert headers["Content-Length"] == "0"
+    assert headers["Connection"] == "close"
+    assert set(headers) == {
+        *SECURITY_HEADERS,
+        *extra_headers,
+        "X-Request-ID",
+        "Content-Length",
+        "Connection",
+    }
+    assert body == b""
+
+
 def test_bad_request_400_bytes(server_process) -> None:
     """A malformed request line yields an empty-bodied 400 with security headers."""
 
@@ -62,16 +64,8 @@ def test_bad_request_400_bytes(server_process) -> None:
     assert status_line == "HTTP/1.1 400 Bad Request"
     assert_security_headers(headers)
     assert_request_id(headers)
-    assert headers["Content-Length"] == "0"
-    assert headers["Connection"] == "close"
     assert "Access-Control-Allow-Origin" not in headers
-    assert set(headers) == {
-        *SECURITY_HEADERS,
-        "X-Request-ID",
-        "Content-Length",
-        "Connection",
-    }
-    assert body == b""
+    assert_empty_body_envelope(headers, body)
 
 
 def test_forbidden_403_bytes(server_process) -> None:
@@ -87,15 +81,7 @@ def test_forbidden_403_bytes(server_process) -> None:
     assert status_line == "HTTP/1.1 403 Forbidden"
     assert_security_headers(headers)
     assert_request_id(headers)
-    assert headers["Content-Length"] == "0"
-    assert headers["Connection"] == "close"
-    assert set(headers) == {
-        *SECURITY_HEADERS,
-        "X-Request-ID",
-        "Content-Length",
-        "Connection",
-    }
-    assert body == b""
+    assert_empty_body_envelope(headers, body)
 
 
 def test_unauthorized_401_bytes(authed_server_process) -> None:
@@ -112,17 +98,10 @@ def test_unauthorized_401_bytes(authed_server_process) -> None:
     assert headers["WWW-Authenticate"] == 'ApiKey realm="pyhttpd"'
     assert_security_headers(headers)
     assert_request_id(headers)
-    assert headers["Content-Length"] == "0"
-    assert headers["Connection"] == "close"
     assert "Access-Control-Allow-Origin" not in headers
-    assert set(headers) == {
-        "WWW-Authenticate",
-        *SECURITY_HEADERS,
-        "X-Request-ID",
-        "Content-Length",
-        "Connection",
-    }
-    assert body == b""
+    assert_empty_body_envelope(
+        headers, body, extra_headers=frozenset({"WWW-Authenticate"})
+    )
 
 
 def test_not_found_404_bytes(server_process) -> None:
@@ -141,18 +120,13 @@ def test_not_found_404_bytes(server_process) -> None:
     assert headers["RateLimit-Limit"] == "50"
     assert headers["RateLimit-Remaining"].isdigit()
     assert RATE_LIMIT_RESET_PATTERN.match(headers["RateLimit-Reset"])
-    assert headers["Content-Length"] == "0"
-    assert headers["Connection"] == "close"
-    assert set(headers) == {
-        *SECURITY_HEADERS,
-        "RateLimit-Limit",
-        "RateLimit-Remaining",
-        "RateLimit-Reset",
-        "X-Request-ID",
-        "Content-Length",
-        "Connection",
-    }
-    assert body == b""
+    assert_empty_body_envelope(
+        headers,
+        body,
+        extra_headers=frozenset(
+            {"RateLimit-Limit", "RateLimit-Remaining", "RateLimit-Reset"}
+        ),
+    )
 
 
 def test_method_not_allowed_405_bytes(server_process) -> None:
@@ -170,19 +144,13 @@ def test_method_not_allowed_405_bytes(server_process) -> None:
     assert_security_headers(headers)
     assert_request_id(headers)
     assert headers["RateLimit-Limit"] == "50"
-    assert headers["Content-Length"] == "0"
-    assert headers["Connection"] == "close"
-    assert set(headers) == {
-        "Allow",
-        "RateLimit-Limit",
-        "RateLimit-Remaining",
-        "RateLimit-Reset",
-        *SECURITY_HEADERS,
-        "X-Request-ID",
-        "Content-Length",
-        "Connection",
-    }
-    assert body == b""
+    assert_empty_body_envelope(
+        headers,
+        body,
+        extra_headers=frozenset(
+            {"Allow", "RateLimit-Limit", "RateLimit-Remaining", "RateLimit-Reset"}
+        ),
+    )
 
 
 def test_payload_too_large_413_bytes(server_process) -> None:
@@ -199,15 +167,7 @@ def test_payload_too_large_413_bytes(server_process) -> None:
     assert status_line == "HTTP/1.1 413 Payload Too Large"
     assert_security_headers(headers)
     assert_request_id(headers)
-    assert headers["Content-Length"] == "0"
-    assert headers["Connection"] == "close"
-    assert set(headers) == {
-        *SECURITY_HEADERS,
-        "X-Request-ID",
-        "Content-Length",
-        "Connection",
-    }
-    assert body == b""
+    assert_empty_body_envelope(headers, body)
 
 
 def test_payload_too_large_413_omits_cors(server_process) -> None:
@@ -220,16 +180,11 @@ def test_payload_too_large_413_omits_cors(server_process) -> None:
         b"Origin: http://example.com\r\n"
         b"Content-Length: 6291456\r\nConnection: close\r\n\r\n",
     )
-    status_line, headers, _ = parse_response(raw)
+    status_line, headers, body = parse_response(raw)
 
     assert status_line == "HTTP/1.1 413 Payload Too Large"
     assert "Access-Control-Allow-Origin" not in headers
-    assert set(headers) == {
-        *SECURITY_HEADERS,
-        "X-Request-ID",
-        "Content-Length",
-        "Connection",
-    }
+    assert_empty_body_envelope(headers, body)
 
 
 def _drain_to_first_429(host: str, port: int, request: bytes) -> bytes:

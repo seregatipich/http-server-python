@@ -3,7 +3,6 @@
 import socket
 import threading
 import time
-from dataclasses import replace
 
 from pyhttpd.adapters.logging.correlation_adapter import (
     clear_correlation_id,
@@ -31,54 +30,12 @@ from pyhttpd.adapters.transport.worker_logging import (
     log_worker_error,
 )
 from pyhttpd.application.context import RequestContext
-from pyhttpd.application.middleware.auth import make_auth_middleware
-from pyhttpd.application.middleware.cors import make_cors_middleware
-from pyhttpd.application.middleware.metrics import make_metrics_middleware
-from pyhttpd.application.middleware.rate_limit import make_rate_limit_middleware
-from pyhttpd.application.middleware.validation import make_validation_middleware
-from pyhttpd.application.pipeline import build_chain
+from pyhttpd.application.middleware.assembly import build_request_chain
 from pyhttpd.application.rendering import ErrorMapper
 from pyhttpd.application.routing import make_default_router
-from pyhttpd.domain import (
-    ALLOWED_METHODS,
-    SECURITY_HEADERS,
-    HttpError,
-    HttpRequest,
-    HttpResponse,
-)
+from pyhttpd.domain import HttpError, HttpRequest
 
 __all__ = ["handle_client", "_recv_with_deadline"]
-
-
-_KNOWN_ROUTE_LABELS = ("/healthz", "/user-agent", "/metrics", "/")
-
-
-def _route_label(request: HttpRequest) -> str:
-    """Map a request to a bounded metric route label (never client-controlled)."""
-    if request.path.startswith("/echo/"):
-        return "/echo/"
-    if request.path.startswith("/files/"):
-        return "/files/"
-    if request.path in _KNOWN_ROUTE_LABELS:
-        return request.path
-    return "other"
-
-
-def _strip_body_for_head(response: HttpResponse) -> HttpResponse:
-    """Return a HEAD response: same headers as GET, no body."""
-    if response.use_chunked:
-        # Preserve Transfer-Encoding: chunked semantics; emit no body and no
-        # misleading Content-Length for a resource of unknown length.
-        return replace(response, body=b"", body_iter=None)
-    length = response.content_length
-    if length is None:
-        length = len(response.body)
-    return replace(
-        response,
-        body=b"",
-        body_iter=None,
-        content_length=length,
-    )
 
 
 def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes: int):
@@ -91,39 +48,16 @@ def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes:
         context.metrics_sink,
         context.file_options,
     )
-
-    def terminal(request: HttpRequest, ctx: RequestContext) -> HttpResponse:
-        is_head = request.method == "HEAD"
-        dispatch_request = replace(request, method="GET") if is_head else request
-        try:
-            response = router.dispatch(dispatch_request, ctx)
-        except HttpError as error:
-            response = ErrorMapper.to_response(error, request, context.cors_config)
-        if is_head:
-            response = _strip_body_for_head(response)
-        if ctx.rate_decision is not None:
-            response.headers.update(ctx.rate_decision.headers)
-        return response
-
-    middlewares = []
-    if context.metrics_sink is not None:
-        middlewares.append(make_metrics_middleware(context.metrics_sink, _route_label))
-    middlewares.append(make_cors_middleware(context.cors_config, SECURITY_HEADERS))
-    if context.rate_limiter is not None:
-        middlewares.append(
-            make_rate_limit_middleware(
-                context.rate_limiter,
-                WORKER_PORT_LOGGER,
-                lambda request, ctx: client_ip,
-                context.metrics_sink,
-            )
-        )
-    middlewares.append(make_validation_middleware(ALLOWED_METHODS, max_body_bytes))
-    if context.authenticator is not None:
-        middlewares.append(
-            make_auth_middleware(context.authenticator, WORKER_PORT_LOGGER)
-        )
-    return build_chain(middlewares, terminal)
+    return build_request_chain(
+        router.dispatch,
+        cors_config=context.cors_config,
+        metrics_sink=context.metrics_sink,
+        rate_limiter=context.rate_limiter,
+        authenticator=context.authenticator,
+        logger=WORKER_PORT_LOGGER,
+        client_ip=client_ip,
+        max_body_bytes=max_body_bytes,
+    )
 
 
 def _apply_handler_timeout(

@@ -140,6 +140,59 @@ def test_receive_request_rejects_body_exceeding_max_body_bytes():
         receive_request(client, b"", max_body_bytes=5)
 
 
+def test_determine_content_length_rejects_underscore_separator():
+    """Python int() accepts '1_000'; a smuggling-safe parser must reject it."""
+
+    with pytest.raises(ValueError):
+        determine_content_length("POST", {"content-length": "1_000"})
+
+
+def test_determine_content_length_rejects_plus_prefixed_value():
+    """A '+'-prefixed Content-Length is non-canonical and must be rejected."""
+
+    with pytest.raises(ValueError):
+        determine_content_length("POST", {"content-length": "+5"})
+
+
+def test_receive_request_rejects_oversized_header_block():
+    """An unbounded header block is rejected before it can exhaust memory."""
+
+    giant_header_block = b"GET / HTTP/1.1\r\nX-Pad: " + b"A" * (128 * 1024) + b"\r\n"
+    client = FakeSocket([giant_header_block])
+    with pytest.raises(RequestEntityTooLarge):
+        receive_request(client, b"")
+
+
+def test_receive_request_rejects_transfer_encoding():
+    """A Transfer-Encoding request is rejected; the body is framed by length only."""
+
+    request_bytes = (
+        b"POST /files/x HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Transfer-Encoding: chunked\r\n"
+        b"Content-Length: 5\r\n\r\n"
+        b"hello"
+    )
+    client = FakeSocket([request_bytes])
+    with pytest.raises(ValueError):
+        receive_request(client, b"")
+
+
+def test_receive_request_rejects_conflicting_content_length():
+    """Two differing Content-Length headers desync framing and must be rejected."""
+
+    request_bytes = (
+        b"POST /files/x HTTP/1.1\r\n"
+        b"Host: localhost\r\n"
+        b"Content-Length: 5\r\n"
+        b"Content-Length: 6\r\n\r\n"
+        b"hello!"
+    )
+    client = FakeSocket([request_bytes])
+    with pytest.raises(ValueError):
+        receive_request(client, b"")
+
+
 def test_receive_request_propagates_incoming_correlation_id():
     """An incoming X-Request-ID header must populate correlation state."""
 

@@ -3,15 +3,10 @@
 import pytest
 import requests
 
+from pyhttpd.domain import SECURITY_HEADERS
 from tests.characterization.raw_client import send_raw, status_line
 
 pytestmark = pytest.mark.integration
-
-SECURITY_HEADERS = {
-    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
-    "Content-Security-Policy": "default-src 'self'",
-    "X-Content-Type-Options": "nosniff",
-}
 
 
 def _assert_security_headers(headers: requests.structures.CaseInsensitiveDict) -> None:

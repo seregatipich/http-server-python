@@ -14,6 +14,7 @@ from pyhttpd.application import (
 )
 from pyhttpd.domain import (
     ALLOWED_METHODS,
+    SECURITY_HEADERS,
     BadRequest,
     CorsConfig,
     Forbidden,
@@ -24,12 +25,6 @@ from pyhttpd.domain import (
     resolve_sandbox_path,
 )
 from tests.unit._helpers import PASSTHROUGH, make_request
-
-SECURITY_HEADERS = {
-    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
-    "Content-Security-Policy": "default-src 'self'",
-    "X-Content-Type-Options": "nosniff",
-}
 
 
 def run_validation(request: HttpRequest):

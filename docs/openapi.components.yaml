@@ -1,0 +1,473 @@
+# OpenAPI reusable components (parameters, headers, responses).
+# Referenced from openapi.yaml and openapi.paths.yaml.
+parameters:
+  MessagePath:
+    name: message
+    in: path
+    required: true
+    description: Arbitrary text reflected back in the response body.
+    schema:
+      type: string
+    example: hello
+  FilePath:
+    name: path
+    in: path
+    required: true
+    description: |
+      Relative path under the configured `--directory`. Path traversal
+      (`..`) and NUL bytes are rejected with `403 Forbidden`.
+    schema:
+      type: string
+    example: notes/todo.txt
+  AcceptEncoding:
+    name: Accept-Encoding
+    in: header
+    required: false
+    description: Advertise `gzip` (with q>0) to receive a gzip-compressed body.
+    schema:
+      type: string
+    example: gzip
+  UserAgent:
+    name: User-Agent
+    in: header
+    required: false
+    description: Client identifier reflected by `/user-agent`.
+    schema:
+      type: string
+    example: curl/8.7.1
+  Range:
+    name: Range
+    in: header
+    required: false
+    description: |
+      Single byte range request, e.g. `bytes=0-1023`, `bytes=1024-`, or a suffix
+      range `bytes=-512`. Multi-range requests are not supported and fall back to a
+      full `200` response.
+    schema:
+      type: string
+    example: bytes=0-1023
+  IfNoneMatch:
+    name: If-None-Match
+    in: header
+    required: false
+    description: |
+      Conditional ETag validator. When it matches the current `ETag` (or is `*`), the
+      server responds `304 Not Modified`.
+    schema:
+      type: string
+    example: '"0a1b2c3d4e5f60718293a4b5c6d7e8f9"'
+  IfModifiedSince:
+    name: If-Modified-Since
+    in: header
+    required: false
+    description: |
+      Conditional date validator (RFC 7231). When the file has not been modified after
+      the supplied date, the server responds `304 Not Modified`. Ignored when
+      `If-None-Match` is present.
+    schema:
+      type: string
+    example: Wed, 24 Jun 2026 12:00:00 GMT
+  Origin:
+    name: Origin
+    in: header
+    required: false
+    description: Request origin used for CORS negotiation.
+    schema:
+      type: string
+    example: https://app.example.com
+  AccessControlRequestMethod:
+    name: Access-Control-Request-Method
+    in: header
+    required: false
+    description: Method the client intends to use; presence marks a CORS preflight.
+    schema:
+      type: string
+    example: PUT
+  AccessControlRequestHeaders:
+    name: Access-Control-Request-Headers
+    in: header
+    required: false
+    description: Headers the client intends to send in the actual request.
+    schema:
+      type: string
+    example: Content-Type, Authorization
+
+headers:
+  StrictTransportSecurity:
+    description: HSTS policy attached to every response.
+    schema:
+      type: string
+      const: max-age=63072000; includeSubDomains
+  ContentSecurityPolicy:
+    description: CSP attached to every response.
+    schema:
+      type: string
+      const: default-src 'self'
+  XContentTypeOptions:
+    description: MIME-sniffing protection attached to every response.
+    schema:
+      type: string
+      const: nosniff
+  Connection:
+    description: Connection disposition.
+    schema:
+      type: string
+      example: close
+  ContentLength:
+    description: Size of the (full or partial) representation in bytes.
+    schema:
+      type: integer
+      format: int64
+      minimum: 0
+    example: 4096
+  ContentEncoding:
+    description: Present and set to `gzip` when the body was compressed.
+    schema:
+      type: string
+      const: gzip
+  ContentRange:
+    description: |
+      Byte extent of a `206` response (`bytes <start>-<end>/<size>`) or the valid
+      extent advertised on a `416` response (`bytes */<size>`).
+    schema:
+      type: string
+    example: bytes 0-1023/8192
+  ETag:
+    description: Strong-ish validator derived from file size and mtime.
+    schema:
+      type: string
+    example: '"0a1b2c3d4e5f60718293a4b5c6d7e8f9"'
+  LastModified:
+    description: RFC 7231 GMT timestamp of the file's last modification.
+    schema:
+      type: string
+    example: Wed, 24 Jun 2026 12:00:00 GMT
+  AcceptRanges:
+    description: Advertises byte-range support.
+    schema:
+      type: string
+      const: bytes
+  CacheControl:
+    description: Present only when the server was started with `--file-cache-control`.
+    schema:
+      type: string
+    example: public, max-age=3600
+  WWWAuthenticate:
+    description: Authentication challenge for the active auth mode.
+    schema:
+      type: string
+    examples:
+      apiKey:
+        value: ApiKey realm="pyhttpd"
+      bearer:
+        value: Bearer realm="pyhttpd"
+  Allow:
+    description: Comma-separated list of methods supported by the resource.
+    schema:
+      type: string
+    example: DELETE, GET, HEAD, POST, PUT
+  RetryAfter:
+    description: Seconds the client should wait before retrying.
+    schema:
+      type: integer
+      minimum: 1
+    example: 1
+  RateLimitLimit:
+    description: Configured request budget for the current window.
+    schema:
+      type: integer
+    example: 100
+  RateLimitRemaining:
+    description: Remaining requests in the current window.
+    schema:
+      type: integer
+      minimum: 0
+    example: 0
+  RateLimitReset:
+    description: Seconds until the bucket refills.
+    schema:
+      type: string
+    example: "1"
+  Vary:
+    description: Indicates response varies by the listed request headers.
+    schema:
+      type: string
+    example: Origin
+  AccessControlAllowOrigin:
+    description: Allowed origin echoed for CORS-eligible requests.
+    schema:
+      type: string
+    example: https://app.example.com
+  AccessControlAllowMethods:
+    description: Methods permitted for cross-origin requests (preflight only).
+    schema:
+      type: string
+    example: GET, POST, PUT, DELETE
+  AccessControlAllowHeaders:
+    description: Request headers permitted for cross-origin requests (preflight only).
+    schema:
+      type: string
+    example: Content-Type, Authorization
+  AccessControlAllowCredentials:
+    description: Present and `true` when credentialed CORS is enabled.
+    schema:
+      type: string
+      const: "true"
+  AccessControlExposeHeaders:
+    description: Response headers exposed to the browser for simple requests.
+    schema:
+      type: string
+    example: X-Request-ID
+  AccessControlMaxAge:
+    description: How long (seconds) a preflight result may be cached.
+    schema:
+      type: string
+    example: "600"
+
+responses:
+  FileContent:
+    description: The full file content.
+    headers:
+      Content-Length:
+        $ref: "#/headers/ContentLength"
+      Content-Encoding:
+        $ref: "#/headers/ContentEncoding"
+      ETag:
+        $ref: "#/headers/ETag"
+      Last-Modified:
+        $ref: "#/headers/LastModified"
+      Accept-Ranges:
+        $ref: "#/headers/AcceptRanges"
+      Cache-Control:
+        $ref: "#/headers/CacheControl"
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+    content:
+      application/octet-stream:
+        schema:
+          type: string
+          format: binary
+  FilePartialContent:
+    description: |
+      A single byte range of the file. The `Content-Type` reflects the file; the body
+      contains only the requested bytes.
+    headers:
+      Content-Range:
+        $ref: "#/headers/ContentRange"
+      Content-Length:
+        $ref: "#/headers/ContentLength"
+      ETag:
+        $ref: "#/headers/ETag"
+      Last-Modified:
+        $ref: "#/headers/LastModified"
+      Accept-Ranges:
+        $ref: "#/headers/AcceptRanges"
+      Cache-Control:
+        $ref: "#/headers/CacheControl"
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+    content:
+      application/octet-stream:
+        schema:
+          type: string
+          format: binary
+  NotModified:
+    description: |
+      The cached representation is still fresh. No body; only `ETag`, `Last-Modified`,
+      `Cache-Control` (when configured), and the security headers are returned.
+    headers:
+      ETag:
+        $ref: "#/headers/ETag"
+      Last-Modified:
+        $ref: "#/headers/LastModified"
+      Cache-Control:
+        $ref: "#/headers/CacheControl"
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  FileWritten:
+    description: The file was created.
+    headers:
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  FileOverwritten:
+    description: An existing file was overwritten. Empty body.
+    headers:
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  FileDeleted:
+    description: The file was deleted. Empty body.
+    headers:
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  BadRequest:
+    description: |
+      Malformed request: missing/invalid `Content-Length` on `POST`, a length that
+      disagrees with the body, a malformed request path, a `Transfer-Encoding`
+      header (unsupported; bodies are framed by `Content-Length` only), or
+      conflicting `Content-Length` headers. The latter two are rejected to prevent
+      request-smuggling desynchronization.
+    headers:
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  Unauthorized:
+    description: |
+      Authentication is enabled and the request lacks valid credentials. Returned only
+      when `--auth-mode` is `api-key` or `jwt`.
+    headers:
+      WWW-Authenticate:
+        $ref: "#/headers/WWWAuthenticate"
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  Forbidden:
+    description: |
+      The principal lacks the required scope (`files:read` for `GET`, `files:write` for
+      `POST`), the path escapes the sandbox, or the target is a directory.
+    headers:
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  NotFound:
+    description: The requested resource does not exist.
+    headers:
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  MethodNotAllowed:
+    description: The HTTP method is not supported for this resource.
+    headers:
+      Allow:
+        $ref: "#/headers/Allow"
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  MethodNotAllowedFiles:
+    description: |
+      The HTTP method is not supported for `/files/*`. The `Allow` header enumerates
+      `DELETE, GET, HEAD, POST, PUT`.
+    headers:
+      Allow:
+        $ref: "#/headers/Allow"
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  RangeNotSatisfiable:
+    description: |
+      The requested byte range cannot be satisfied. The `Content-Range` header
+      advertises the valid extent as `bytes */<size>`.
+    headers:
+      Content-Range:
+        $ref: "#/headers/ContentRange"
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  PayloadTooLarge:
+    description: |
+      The request body exceeds the maximum accepted size
+      (`HTTP_SERVER_MAX_BODY_BYTES`, default 5 MiB), or the request header block
+      exceeds the fixed 64 KiB cap. The connection is closed.
+    headers:
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  TooManyRequests:
+    description: |
+      The client exceeded the configured token-bucket rate limit. Returned only when
+      rate limiting is enabled and not in dry-run mode.
+    headers:
+      Retry-After:
+        $ref: "#/headers/RetryAfter"
+      RateLimit-Limit:
+        $ref: "#/headers/RateLimitLimit"
+      RateLimit-Remaining:
+        $ref: "#/headers/RateLimitRemaining"
+      RateLimit-Reset:
+        $ref: "#/headers/RateLimitReset"
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+    content:
+      text/plain:
+        schema:
+          type: string
+          example: Rate limit exceeded
+  InternalServerError:
+    description: An unexpected server-side failure occurred.
+    headers:
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+  ServiceUnavailable:
+    description: |
+      The server is draining (graceful shutdown) or a connection cap was exceeded.
+    headers:
+      Retry-After:
+        $ref: "#/headers/RetryAfter"
+      Connection:
+        $ref: "#/headers/Connection"
+      Strict-Transport-Security:
+        $ref: "#/headers/StrictTransportSecurity"
+      Content-Security-Policy:
+        $ref: "#/headers/ContentSecurityPolicy"
+      X-Content-Type-Options:
+        $ref: "#/headers/XContentTypeOptions"
+    content:
+      text/plain:
+        schema:
+          type: string
+          example: draining

@@ -174,21 +174,12 @@ def _assert_healthy(result: LoadResult) -> None:
     assert result.throughput_rps > MIN_THROUGHPUT_RPS
 
 
-def test_sequential_root_throughput(server_process: "ServerProcessInfo") -> None:
-    """Sequential GET / sustains the throughput floor with zero errors."""
+@pytest.mark.parametrize("path", ["/", "/echo/load-test"])
+def test_sequential_throughput(server_process: "ServerProcessInfo", path: str) -> None:
+    """Sequential GETs sustain the throughput floor with zero errors."""
 
-    url = f"{server_process['base_url']}/"
-    result = _run_sequential(url, SEQUENTIAL_REQUESTS)
-    _report("sequential GET /", result)
-    _assert_healthy(result)
-
-
-def test_sequential_echo_throughput(server_process: "ServerProcessInfo") -> None:
-    """Sequential GET /echo/<msg> sustains the throughput floor."""
-
-    url = f"{server_process['base_url']}/echo/load-test"
-    result = _run_sequential(url, SEQUENTIAL_REQUESTS)
-    _report("sequential GET /echo/load-test", result)
+    result = _run_sequential(f"{server_process['base_url']}{path}", SEQUENTIAL_REQUESTS)
+    _report(f"sequential GET {path}", result)
     _assert_healthy(result)
 
 

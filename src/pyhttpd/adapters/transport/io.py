@@ -25,6 +25,11 @@ from pyhttpd.domain import (
 
 IO_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.io"), {})
 
+# Cap the request header block so a client streaming headers without a
+# terminating blank line cannot exhaust memory; 64 KiB is generous for
+# legitimate cookies and authorization headers.
+MAX_HEADER_BYTES = 64 * 1024
+
 
 def parse_headers(lines: list[str]) -> dict[str, str]:
     """Convert raw header lines into a lowercase-keyed dictionary."""
@@ -57,18 +62,34 @@ def parse_request_line(request_line: str) -> Tuple[str, str]:
 
 
 def _parse_content_length(header_value: str) -> int:
-    try:
-        content_length = int(header_value)
-    except ValueError as exc:
-        raise ValueError("Invalid Content-Length") from exc
-    if content_length < 0:
-        raise ValueError("Negative Content-Length")
-    return content_length
+    text = header_value.strip()
+    if not (text.isascii() and text.isdigit()):
+        raise ValueError("Invalid Content-Length")
+    return int(text)
 
 
 def _enforce_body_size(content_length: int, max_body_bytes: int) -> None:
     if content_length > max_body_bytes:
         raise RequestEntityTooLarge
+
+
+def _reject_ambiguous_framing(header_lines: list[str], headers: dict[str, str]) -> None:
+    """Reject request framings that cannot be unambiguously interpreted.
+
+    The body is framed solely by Content-Length, so a Transfer-Encoding header
+    (which an upstream proxy might honor instead) or conflicting Content-Length
+    values would desynchronize framing -- a request-smuggling vector
+    (RFC 9112 section 6.3).
+    """
+    if "transfer-encoding" in headers:
+        raise ValueError("Transfer-Encoding is not supported")
+    declared = {
+        line.split(":", 1)[1].strip()
+        for line in header_lines
+        if ":" in line and line.split(":", 1)[0].strip().lower() == "content-length"
+    }
+    if len(declared) > 1:
+        raise ValueError("conflicting Content-Length headers")
 
 
 def determine_content_length(
@@ -123,6 +144,8 @@ def _read_until_headers(
         if not chunk:
             return b""
         buffer += chunk
+        if len(buffer) > MAX_HEADER_BYTES:
+            raise RequestEntityTooLarge
     return buffer
 
 
@@ -164,6 +187,7 @@ def receive_request(
     header_lines = header_block.decode().split("\r\n")
     method, path = parse_request_line(header_lines[0])
     headers = parse_headers(header_lines[1:])
+    _reject_ambiguous_framing(header_lines[1:], headers)
 
     incoming_correlation_id = headers.get("x-request-id")
     if incoming_correlation_id:
