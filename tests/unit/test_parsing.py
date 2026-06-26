@@ -154,6 +154,15 @@ def test_determine_content_length_rejects_plus_prefixed_value():
         determine_content_length("POST", {"content-length": "+5"})
 
 
+def test_receive_request_rejects_oversized_header_block():
+    """An unbounded header block is rejected before it can exhaust memory."""
+
+    giant_header_block = b"GET / HTTP/1.1\r\nX-Pad: " + b"A" * (128 * 1024) + b"\r\n"
+    client = FakeSocket([giant_header_block])
+    with pytest.raises(RequestEntityTooLarge):
+        receive_request(client, b"")
+
+
 def test_receive_request_rejects_transfer_encoding():
     """A Transfer-Encoding request is rejected; the body is framed by length only."""
 

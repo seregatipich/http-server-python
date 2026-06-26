@@ -25,6 +25,11 @@ from pyhttpd.domain import (
 
 IO_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.io"), {})
 
+# Cap the request header block so a client streaming headers without a
+# terminating blank line cannot exhaust memory; 64 KiB is generous for
+# legitimate cookies and authorization headers.
+MAX_HEADER_BYTES = 64 * 1024
+
 
 def parse_headers(lines: list[str]) -> dict[str, str]:
     """Convert raw header lines into a lowercase-keyed dictionary."""
@@ -139,6 +144,8 @@ def _read_until_headers(
         if not chunk:
             return b""
         buffer += chunk
+        if len(buffer) > MAX_HEADER_BYTES:
+            raise RequestEntityTooLarge
     return buffer
 
 

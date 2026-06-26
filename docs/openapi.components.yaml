@@ -410,7 +410,8 @@ responses:
   PayloadTooLarge:
     description: |
       The request body exceeds the maximum accepted size
-      (`HTTP_SERVER_MAX_BODY_BYTES`, default 5 MiB). The connection is closed.
+      (`HTTP_SERVER_MAX_BODY_BYTES`, default 5 MiB), or the request header block
+      exceeds the fixed 64 KiB cap. The connection is closed.
     headers:
       Strict-Transport-Security:
         $ref: "#/headers/StrictTransportSecurity"

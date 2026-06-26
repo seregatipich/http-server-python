@@ -131,3 +131,19 @@ def test_conflicting_content_length_rejected(
         )
         response = read_http_response(sock)
     assert response.status_line.startswith("HTTP/1.1 400")
+
+
+def test_oversized_header_block_rejected(
+    server_process: "ServerProcessInfo",
+) -> None:
+    """A header block past the 64 KiB cap is rejected with 413, bounding memory."""
+    host = server_process["host"]
+    port = server_process["port"]
+    with socket.create_connection((host, port), timeout=10) as sock:
+        payload = b"GET / HTTP/1.1\r\nX-Pad: " + b"A" * (96 * 1024) + b"\r\n\r\n"
+        try:
+            sock.sendall(payload)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the server may close as soon as the cap trips mid-send
+        response = read_http_response(sock)
+    assert response.status_line.startswith("HTTP/1.1 413")
