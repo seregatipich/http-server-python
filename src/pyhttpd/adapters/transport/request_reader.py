@@ -2,34 +2,32 @@
 
 import logging
 import socket
-import time
 from typing import Optional
 
-from pyhttpd.adapters.transport.io import receive_request, send_response
+from pyhttpd.adapters.transport.io import (
+    _recv_with_deadline,
+    receive_request,
+    send_response,
+)
 from pyhttpd.adapters.transport.wire import format_client_address
 from pyhttpd.adapters.transport.worker_logging import WORKER_LOGGER
 from pyhttpd.application.rendering import (
     bad_request_response,
     entity_too_large_response,
     forbidden_response,
+    request_timeout_response,
 )
 from pyhttpd.domain import (
     SECURITY_HEADERS,
     ForbiddenPath,
     HttpRequest,
     HttpResponse,
+    PhaseTimeouts,
     RequestEntityTooLarge,
+    RequestTimeout,
 )
 
-
-def _recv_with_deadline(client_socket: socket.socket, deadline_ns: int) -> bytes:
-    """Receive data from socket with a deadline, raising TimeoutError if exceeded."""
-    remaining_ns = deadline_ns - time.monotonic_ns()
-    if remaining_ns <= 0:
-        raise TimeoutError("Request deadline exceeded")
-    timeout_seconds = remaining_ns / 1_000_000_000
-    client_socket.settimeout(timeout_seconds)
-    return client_socket.recv(4096)
+__all__ = ["_read_request_with_validation", "_recv_with_deadline"]
 
 
 def _reject(
@@ -53,11 +51,22 @@ def _read_request_with_validation(
     buffer: bytes,
     client_address: tuple[str, int],
     max_body_bytes: int,
+    timeouts: Optional[PhaseTimeouts] = None,
 ) -> tuple[Optional[HttpRequest], bytes, bool]:
     """Read a request from the socket while enforcing size and path limits."""
 
     try:
-        request, buffer = receive_request(client_socket, buffer, max_body_bytes)
+        request, buffer = receive_request(
+            client_socket, buffer, max_body_bytes, timeouts
+        )
+    except RequestTimeout:
+        return _reject(
+            client_socket,
+            client_address,
+            "Client too slow to send request",
+            "request_timeout",
+            request_timeout_response(SECURITY_HEADERS),
+        )
     except RequestEntityTooLarge:
         WORKER_LOGGER.warning(
             "Request body size exceeded limit",

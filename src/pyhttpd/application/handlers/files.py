@@ -30,6 +30,7 @@ from pyhttpd.domain import (
     parse_range,
     resolve_sandbox_path,
     should_close,
+    sniff_content_type,
 )
 
 RouteHandler = Callable[[HttpRequest, RequestContext], HttpResponse]
@@ -46,9 +47,18 @@ def _is_invalid_file_route(remainder: str) -> bool:
     )
 
 
-def _content_type_for_path(resolved_path: Path) -> str:
+def _content_type_for_path(
+    resolved_path: Path, options: FileServingOptions = _DEFAULT_OPTIONS
+) -> str:
     mime_type, _ = mimetypes.guess_type(resolved_path.as_posix())
-    return mime_type or "application/octet-stream"
+    if mime_type:
+        return mime_type
+    if options.content_sniffing:
+        with open(resolved_path, "rb") as file_handle:
+            sniffed = sniff_content_type(file_handle.read(256))
+        if sniffed:
+            return sniffed
+    return "application/octet-stream"
 
 
 def _stream_file(
@@ -209,7 +219,7 @@ def _get_file_response(
 
     stat_result = os.stat(resolved_path)
     file_size = stat_result.st_size
-    content_type = _content_type_for_path(resolved_path)
+    content_type = _content_type_for_path(resolved_path, options)
     etag = compute_etag(file_size, stat_result.st_mtime_ns)
     headers = _base_file_headers(
         request, content_type, etag, stat_result.st_mtime, cors_config, options

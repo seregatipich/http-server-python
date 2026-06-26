@@ -17,3 +17,4 @@ class WorkerContext:  # pylint: disable=too-many-instance-attributes
     authenticator: Optional[Any] = None
     metrics_sink: Optional[Any] = None
     file_options: Optional[Any] = None
+    phase_timeouts: Optional[Any] = None

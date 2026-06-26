@@ -17,6 +17,7 @@ from pyhttpd.adapters.tls import create_server_socket
 from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
 from pyhttpd.adapters.transport.context import WorkerContext
 from pyhttpd.adapters.transport.server import run_server
+from pyhttpd.application.config_validation import validate_startup_config
 from pyhttpd.domain import (
     AuthConfig,
     Authenticator,
@@ -24,6 +25,7 @@ from pyhttpd.domain import (
     FileServingOptions,
     LifecycleState,
     MetricsSink,
+    PhaseTimeouts,
     TokenBucketSettings,
 )
 
@@ -111,6 +113,16 @@ def _create_file_options(args: argparse.Namespace) -> FileServingOptions:
         cache_control=args.file_cache_control,
         gzip=args.file_gzip,
         gzip_min_bytes=args.file_gzip_min_bytes,
+        content_sniffing=args.content_sniffing,
+    )
+
+
+def _create_phase_timeouts(args: argparse.Namespace) -> PhaseTimeouts:
+    """Create per-phase request timeouts from CLI arguments."""
+    return PhaseTimeouts(
+        header_read_seconds=args.header_read_timeout,
+        body_read_seconds=args.body_read_timeout,
+        handler_seconds=args.handler_timeout,
     )
 
 
@@ -131,6 +143,7 @@ def _create_worker_context(
         authenticator=_create_authenticator(args),
         metrics_sink=metrics_sink,
         file_options=_create_file_options(args),
+        phase_timeouts=_create_phase_timeouts(args),
     )
 
 
@@ -160,6 +173,15 @@ class Server:
 def build_server(args: argparse.Namespace) -> Server:
     """Configure runtime, register signals, and wire the server collaborators."""
     configure_logging(args.log_level, args.log_destination)
+
+    config_errors = validate_startup_config(args)
+    if config_errors:
+        for message in config_errors:
+            MAIN_LOGGER.critical(
+                "Invalid configuration",
+                extra={"event": "config_invalid", "error_type": message},
+            )
+        raise SystemExit(f"Invalid configuration: {'; '.join(config_errors)}")
 
     config = ServerConfig(
         socket_timeout=args.socket_timeout,

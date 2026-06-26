@@ -10,6 +10,7 @@ import pytest
 from pyhttpd.adapters import ServerLifecycle
 from pyhttpd.adapters.config import ServerConfig
 from pyhttpd.adapters.transport import _recv_with_deadline
+from pyhttpd.domain import RequestTimeout
 
 
 class TestRecvWithDeadline:
@@ -27,10 +28,10 @@ class TestRecvWithDeadline:
         assert 0 < timeout_arg <= 1.0
 
     def test_recv_after_deadline_expired(self):
-        """Test TimeoutError raised when deadline already passed."""
+        """Test RequestTimeout raised when deadline already passed."""
         mock_socket = Mock(spec=socket.socket)
         deadline_ns = time.monotonic_ns() - 1_000_000_000
-        with pytest.raises(TimeoutError, match="Request deadline exceeded"):
+        with pytest.raises(RequestTimeout, match="Request deadline exceeded"):
             _recv_with_deadline(mock_socket, deadline_ns)
         mock_socket.recv.assert_not_called()
 

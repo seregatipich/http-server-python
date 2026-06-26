@@ -21,7 +21,9 @@ from pyhttpd.domain import (
     HttpRequest,
     MethodNotAllowed,
     NotFound,
+    RangeNotSatisfiable,
     RateLimitDecision,
+    RequestTimeout,
     ServiceUnavailable,
     Unauthorized,
 )
@@ -233,6 +235,24 @@ def test_error_mapper_routes_forbidden() -> None:
 
     response = ErrorMapper.to_response(Forbidden(), make_request("/secret"), None)
     assert response.status_line == "HTTP/1.1 403 Forbidden"
+
+
+def test_error_mapper_routes_request_timeout() -> None:
+    """RequestTimeout dispatches to the 408 builder that closes the connection."""
+
+    response = ErrorMapper.to_response(RequestTimeout(), make_request("/slow"), None)
+    assert response.status_line == "HTTP/1.1 408 Request Timeout"
+    assert response.headers["Connection"] == "close"
+
+
+def test_error_mapper_routes_range_not_satisfiable() -> None:
+    """RangeNotSatisfiable dispatches to the 416 builder with Content-Range."""
+
+    response = ErrorMapper.to_response(
+        RangeNotSatisfiable(100), make_request("/files/x"), None
+    )
+    assert response.status_line == "HTTP/1.1 416 Range Not Satisfiable"
+    assert response.headers["Content-Range"] == "bytes */100"
 
 
 def test_error_mapper_routes_unauthorized_with_challenge() -> None:

@@ -23,6 +23,7 @@ from pyhttpd.domain import (
     RateLimitDecision,
     RateLimited,
     RequestEntityTooLarge,
+    RequestTimeout,
     ServiceUnavailable,
     Unauthorized,
     should_close,
@@ -326,6 +327,15 @@ def range_not_satisfiable_response(
     )
 
 
+def request_timeout_response(security_headers: dict[str, str]) -> HttpResponse:
+    """Produce a 408 response that always closes the connection."""
+    return _basic_response(
+        "HTTP/1.1 408 Request Timeout",
+        security_headers,
+        extra_headers={"Connection": "close"},
+    )
+
+
 def internal_error_response(
     request: Optional[HttpRequest], security_headers: dict[str, str]
 ) -> HttpResponse:
@@ -363,6 +373,8 @@ class ErrorMapper:
             )
         if isinstance(error, RequestEntityTooLarge):
             return entity_too_large_response(SECURITY_HEADERS)
+        if isinstance(error, RequestTimeout):
+            return request_timeout_response(SECURITY_HEADERS)
         if isinstance(error, RangeNotSatisfiable):
             return range_not_satisfiable_response(
                 error.file_size, request, cors_config, SECURITY_HEADERS

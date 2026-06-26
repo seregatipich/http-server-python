@@ -16,6 +16,15 @@ DEFAULT_BURST_CAPACITY = _env_int("HTTP_SERVER_BURST_CAPACITY", 25)
 DEFAULT_RATE_LIMIT_DRY_RUN = _env_bool("HTTP_SERVER_RATE_LIMIT_DRY_RUN", False)
 DEFAULT_SOCKET_TIMEOUT = _env_int("HTTP_SERVER_SOCKET_TIMEOUT", 60)
 DEFAULT_SHUTDOWN_GRACE_SECONDS = _env_int("HTTP_SERVER_SHUTDOWN_GRACE_SECONDS", 30)
+DEFAULT_HEADER_READ_TIMEOUT = _env_int(
+    "HTTP_SERVER_HEADER_READ_TIMEOUT", DEFAULT_SOCKET_TIMEOUT
+)
+DEFAULT_BODY_READ_TIMEOUT = _env_int(
+    "HTTP_SERVER_BODY_READ_TIMEOUT", DEFAULT_SOCKET_TIMEOUT
+)
+DEFAULT_HANDLER_TIMEOUT = _env_int(
+    "HTTP_SERVER_HANDLER_TIMEOUT", DEFAULT_SOCKET_TIMEOUT
+)
 DEFAULT_CORS_ALLOWED_ORIGINS = _env_list("HTTP_SERVER_CORS_ALLOWED_ORIGINS", ["*"])
 DEFAULT_CORS_ALLOWED_METHODS = _env_list(
     "HTTP_SERVER_CORS_ALLOWED_METHODS", ["GET", "POST", "OPTIONS"]
@@ -38,6 +47,7 @@ DEFAULT_METRICS_ENABLED = _env_bool("HTTP_SERVER_METRICS", False)
 DEFAULT_FILE_CACHE_CONTROL = _env_str("HTTP_SERVER_FILE_CACHE_CONTROL", "")
 DEFAULT_FILE_GZIP = _env_bool("HTTP_SERVER_FILE_GZIP", False)
 DEFAULT_FILE_GZIP_MIN_BYTES = _env_int("HTTP_SERVER_FILE_GZIP_MIN_BYTES", 1024)
+DEFAULT_CONTENT_SNIFFING = _env_bool("HTTP_SERVER_CONTENT_SNIFFING", False)
 
 
 @dataclass
@@ -119,6 +129,24 @@ def _add_timeout_args(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=DEFAULT_SHUTDOWN_GRACE_SECONDS,
         help="Grace period in seconds for graceful shutdown",
+    )
+    parser.add_argument(
+        "--header-read-timeout",
+        type=float,
+        default=DEFAULT_HEADER_READ_TIMEOUT,
+        help="Deadline in seconds to finish reading request headers",
+    )
+    parser.add_argument(
+        "--body-read-timeout",
+        type=float,
+        default=DEFAULT_BODY_READ_TIMEOUT,
+        help="Deadline in seconds to finish reading the request body",
+    )
+    parser.add_argument(
+        "--handler-timeout",
+        type=float,
+        default=DEFAULT_HANDLER_TIMEOUT,
+        help="Deadline in seconds for handler execution and response writing",
     )
 
 
@@ -221,6 +249,12 @@ def _add_file_serving_args(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=DEFAULT_FILE_GZIP_MIN_BYTES,
         help="Minimum file size in bytes before gzip is applied",
+    )
+    parser.add_argument(
+        "--content-sniffing",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_CONTENT_SNIFFING,
+        help="Sniff content type from magic bytes when the extension is unknown",
     )
 
 

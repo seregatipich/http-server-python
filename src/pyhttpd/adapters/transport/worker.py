@@ -165,11 +165,14 @@ def _process_client_requests(
             if _drain_if_requested(lifecycle, client_socket):
                 break
 
+            if context.config is not None:
+                client_socket.settimeout(context.config.socket_timeout)
             request, buffer, should_terminate = _read_request_with_validation(
                 client_socket,
                 buffer,
                 client_address,
                 max_body_bytes,
+                context.phase_timeouts,
             )
             if should_terminate:
                 break

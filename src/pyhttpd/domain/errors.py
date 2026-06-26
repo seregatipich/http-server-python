@@ -68,6 +68,13 @@ class Unauthorized(HttpError):
         self.challenge = challenge
 
 
+class RequestTimeout(HttpError):
+    """Raised when a client is too slow to send a complete request."""
+
+    status = 408
+    reason = "Request Timeout"
+
+
 class RateLimited(HttpError):
     """Raised when a client exceeds the configured rate limit."""
 

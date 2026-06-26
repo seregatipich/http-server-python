@@ -2,6 +2,7 @@
 
 import logging
 import socket
+import time
 import urllib.parse
 from typing import Optional, Tuple
 
@@ -17,7 +18,9 @@ from pyhttpd.domain import (
     ForbiddenPath,
     HttpRequest,
     HttpResponse,
+    PhaseTimeouts,
     RequestEntityTooLarge,
+    RequestTimeout,
 )
 
 IO_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.io"), {})
@@ -84,9 +87,39 @@ def determine_content_length(
     return content_length
 
 
-def _read_until_headers(client_socket: socket.socket, buffer: bytes) -> bytes:
+def _recv_with_deadline(client_socket: socket.socket, deadline_ns: int) -> bytes:
+    """Receive data from socket with a deadline, raising RequestTimeout if exceeded."""
+    remaining_ns = deadline_ns - time.monotonic_ns()
+    if remaining_ns <= 0:
+        raise RequestTimeout("Request deadline exceeded")
+    client_socket.settimeout(remaining_ns / 1_000_000_000)
+    try:
+        return client_socket.recv(4096)
+    except (socket.timeout, TimeoutError) as exc:
+        raise RequestTimeout("Request deadline exceeded") from exc
+
+
+def _deadline_ns(seconds: Optional[float]) -> Optional[int]:
+    if seconds is None:
+        return None
+    return time.monotonic_ns() + int(seconds * 1_000_000_000)
+
+
+def _read_until_headers(
+    client_socket: socket.socket,
+    buffer: bytes,
+    timeouts: Optional[PhaseTimeouts] = None,
+) -> bytes:
+    deadline: Optional[int] = None
     while HEADER_DELIMITER not in buffer:
-        chunk = client_socket.recv(4096)
+        if buffer and timeouts is not None:
+            if deadline is None:
+                deadline = time.monotonic_ns() + int(
+                    timeouts.header_read_seconds * 1_000_000_000
+                )
+            chunk = _recv_with_deadline(client_socket, deadline)
+        else:
+            chunk = client_socket.recv(4096)
         if not chunk:
             return b""
         buffer += chunk
@@ -98,9 +131,16 @@ def _read_body(
     remainder: bytes,
     content_length: int,
     max_body_bytes: int,
+    timeouts: Optional[PhaseTimeouts] = None,
 ) -> Tuple[Optional[bytes], bytes]:
+    deadline = (
+        _deadline_ns(timeouts.body_read_seconds) if timeouts is not None else None
+    )
     while len(remainder) < content_length:
-        chunk = client_socket.recv(4096)
+        if deadline is not None:
+            chunk = _recv_with_deadline(client_socket, deadline)
+        else:
+            chunk = client_socket.recv(4096)
         if not chunk:
             return None, b""
         remainder += chunk
@@ -113,9 +153,10 @@ def receive_request(
     client_socket: socket.socket,
     buffer: bytes,
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
+    timeouts: Optional[PhaseTimeouts] = None,
 ) -> Tuple[Optional[HttpRequest], bytes]:
     """Read bytes from the socket until a complete request is available."""
-    buffer = _read_until_headers(client_socket, buffer)
+    buffer = _read_until_headers(client_socket, buffer, timeouts)
     if not buffer:
         return None, b""
 
@@ -130,7 +171,7 @@ def receive_request(
 
     content_length = determine_content_length(method, headers, max_body_bytes)
     body, leftover = _read_body(
-        client_socket, remainder, content_length, max_body_bytes
+        client_socket, remainder, content_length, max_body_bytes, timeouts
     )
     if body is None:
         return None, b""
