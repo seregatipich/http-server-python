@@ -8,13 +8,7 @@ import pytest
 
 from pyhttpd.adapters.transport import WorkerContext, handle_client
 from pyhttpd.application import RequestContext, make_index_handler
-from pyhttpd.domain import Forbidden, ForbiddenPath, HttpRequest
-
-SECURITY_HEADERS = {
-    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
-    "Content-Security-Policy": "default-src 'self'",
-    "X-Content-Type-Options": "nosniff",
-}
+from pyhttpd.domain import SECURITY_HEADERS, Forbidden, ForbiddenPath, HttpRequest
 
 
 def _capturing_socket(request_bytes: bytes) -> tuple[MagicMock, list[bytes]]:
