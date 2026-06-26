@@ -9,25 +9,12 @@ import time
 import pytest
 
 from pyhttpd.domain import SECURITY_HEADERS
-from tests.characterization.raw_client import send_raw
+from tests.characterization.raw_client import parse_response, send_raw
 
 pytestmark = pytest.mark.integration
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]+$")
 RATE_LIMIT_RESET_PATTERN = re.compile(r"^\d+(\.\d+)?$")
-
-
-def parse_response(raw_response: bytes) -> tuple[str, dict[str, str], bytes]:
-    """Split a raw HTTP response into status line, header map, and body bytes."""
-
-    header_block, body = raw_response.split(b"\r\n\r\n", 1)
-    lines = header_block.split(b"\r\n")
-    status_line = lines[0].decode("latin-1")
-    headers: dict[str, str] = {}
-    for line in lines[1:]:
-        name, _, value = line.partition(b": ")
-        headers[name.decode("latin-1")] = value.decode("latin-1")
-    return status_line, headers, body
 
 
 def assert_request_id(headers: dict[str, str]) -> None:
