@@ -326,7 +326,10 @@ responses:
   BadRequest:
     description: |
       Malformed request: missing/invalid `Content-Length` on `POST`, a length that
-      disagrees with the body, or a malformed request path.
+      disagrees with the body, a malformed request path, a `Transfer-Encoding`
+      header (unsupported; bodies are framed by `Content-Length` only), or
+      conflicting `Content-Length` headers. The latter two are rejected to prevent
+      request-smuggling desynchronization.
     headers:
       Strict-Transport-Security:
         $ref: "#/headers/StrictTransportSecurity"

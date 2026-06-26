@@ -47,7 +47,7 @@ def _suffix_range(end_text: str, file_size: int) -> RangeResult:
     if not end_text.isdigit():
         return None
     suffix = int(end_text)
-    if suffix == 0:
+    if suffix == 0 or file_size == 0:
         return UNSATISFIABLE_RANGE
     start = max(0, file_size - suffix)
     return ByteRange(start, file_size - 1)

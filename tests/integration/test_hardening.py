@@ -94,3 +94,40 @@ def test_invalid_configuration_aborts_startup(tmp_path: Path) -> None:
     )
     assert process.returncode != 0
     assert "Invalid configuration" in (process.stderr + process.stdout)
+
+
+def test_transfer_encoding_request_rejected(
+    server_process: "ServerProcessInfo",
+) -> None:
+    """A Transfer-Encoding request is rejected with 400 to prevent framing desync."""
+    host = server_process["host"]
+    port = server_process["port"]
+    with socket.create_connection((host, port), timeout=10) as sock:
+        sock.sendall(
+            b"POST /files/x HTTP/1.1\r\n"
+            b"Host: x\r\n"
+            b"Transfer-Encoding: chunked\r\n"
+            b"Connection: close\r\n\r\n"
+            b"0\r\n\r\n"
+        )
+        response = read_http_response(sock)
+    assert response.status_line.startswith("HTTP/1.1 400")
+
+
+def test_conflicting_content_length_rejected(
+    server_process: "ServerProcessInfo",
+) -> None:
+    """Two differing Content-Length headers are rejected with 400."""
+    host = server_process["host"]
+    port = server_process["port"]
+    with socket.create_connection((host, port), timeout=10) as sock:
+        sock.sendall(
+            b"POST /files/x HTTP/1.1\r\n"
+            b"Host: x\r\n"
+            b"Content-Length: 5\r\n"
+            b"Content-Length: 6\r\n"
+            b"Connection: close\r\n\r\n"
+            b"hello!"
+        )
+        response = read_http_response(sock)
+    assert response.status_line.startswith("HTTP/1.1 400")

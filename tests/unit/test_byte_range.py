@@ -36,6 +36,16 @@ def test_unsatisfiable_when_start_past_end():
     assert parse_range("bytes=200-300", 100) is UNSATISFIABLE_RANGE
 
 
+def test_suffix_range_on_empty_file_is_unsatisfiable():
+    """A suffix range against a zero-length file is unsatisfiable, not a 206."""
+    assert parse_range("bytes=-5", 0) is UNSATISFIABLE_RANGE
+
+
+def test_bounded_range_on_empty_file_is_unsatisfiable():
+    """A bounded range against a zero-length file is unsatisfiable."""
+    assert parse_range("bytes=0-0", 0) is UNSATISFIABLE_RANGE
+
+
 def test_multi_range_falls_back_to_full():
     """Multi-range requests fall back to a full 200 response."""
     assert parse_range("bytes=0-1,3-4", 100) is None
