@@ -17,9 +17,15 @@ def test_connection_limit_returns_503(limited_server_process) -> None:
     host = limited_server_process["host"]
     port = limited_server_process["port"]
 
-    holder = socket.create_connection((host, port), timeout=2)
+    holder = socket.create_connection((host, port), timeout=5)
     try:
-        with socket.create_connection((host, port), timeout=2) as blocked:
+        # Drive one request through the holder so its worker has registered the
+        # single connection slot before the second connection races the accept
+        # loop; otherwise the blocked socket can win the slot and the server
+        # waits for a request the test never sends.
+        holder.sendall(b"GET /healthz HTTP/1.1\r\nHost: x\r\n\r\n")
+        read_http_response(holder)
+        with socket.create_connection((host, port), timeout=5) as blocked:
             response = read_http_response(blocked)
         assert response.status_line.startswith("HTTP/1.1 503")
         assert b"connection limit exceeded" in response.body
