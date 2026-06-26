@@ -15,7 +15,16 @@ dependencies = []
 pyhttpd = "pyhttpd.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=9", "requests>=2.32", "black", "isort", "pylint", "mypy", "ruff"]
+dev = [
+    "pytest>=9.1,<10",
+    "requests>=2.34,<3",
+    "black>=26.5,<27",
+    "isort>=8.0,<9",
+    "pylint>=4.0,<5",
+    "mypy>=2.1,<3",
+    "ruff>=0.15.20,<0.16",
+    "pip-audit>=2.7",
+]
 
 [tool.setuptools]
 package-dir = { "" = "src" }

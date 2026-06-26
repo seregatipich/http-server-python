@@ -172,6 +172,60 @@ python3 tests/manual_http_runner.py [--base-url <url>] [--skip-smoke] [--skip-lo
 
 The manual CLI drives smoke checks, persistent-connection probes, multi-megabyte file transfers, and progressive load/stress tiers. Run results are stored in `.http-test-artifacts/`, which stays out of version control.
 
+### Performance
+
+Throughput and latency baselines live in `tests/performance/` and are excluded
+from the default run (the `performance` marker). Run them explicitly:
+
+```bash
+python -m pytest -m performance -s   # prints req/s and p50/p95 latency
+```
+
+## Observability
+
+Pass `--metrics` (or `HTTP_SERVER_METRICS=true`) to expose `GET /metrics` in
+Prometheus text exposition format (no client library, stdlib only):
+
+```bash
+pyhttpd --metrics
+curl -s localhost:4221/metrics | grep -E '^http_requests_total|^http_request_duration_seconds_bucket'
+```
+
+Instruments: request counter (method/route/status), error counter, latency
+histogram, in-flight gauge, and rejection counters (rate-limit / connection /
+draining). `/metrics` is excluded from its own metrics. The endpoint is off by
+default, so it never appears unless explicitly enabled.
+
+## API documentation
+
+The full endpoint surface — methods, status codes, conditional/range behavior,
+auth schemes, and response headers — is described in an OpenAPI 3.1 spec at
+[`docs/openapi.yaml`](docs/openapi.yaml).
+
+## Deployment
+
+A multi-stage `Dockerfile` produces a slim image that runs as a non-root user
+and carries zero Python runtime dependencies. The server binds `0.0.0.0` inside
+the container and ships a stdlib-based `HEALTHCHECK` against `/healthz`.
+
+```bash
+docker build -t pyhttpd .
+docker run --rm -p 8080:8080 -v "$PWD/data:/srv" pyhttpd
+# or
+docker compose up --build
+curl -s localhost:8080/healthz
+```
+
+`docker-compose.yml` maps `8080:8080`, mounts `./data` to `/srv`, and restarts
+unless stopped.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request across Python
+3.11 and 3.12: `black --check`, `isort --check-only`, `ruff`, `mypy`, `pylint`,
+the full `pytest` suite, and `pip-audit` against the (empty) runtime dependency
+closure. A dependent job builds the container image on green.
+
 ## Housekeeping
 
 ```bash
