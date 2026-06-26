@@ -4,6 +4,8 @@ import gzip
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+
 from pyhttpd.application import (
     ErrorMapper,
     RequestContext,
@@ -143,21 +145,19 @@ def test_rate_limited_response_truncates_fractional_reset() -> None:
     assert response.headers["Retry-After"] == "2"
 
 
-def test_connection_limited_response_names_the_limit_type() -> None:
-    """A named limit type is woven into the response body."""
+@pytest.mark.parametrize(
+    ("limit_type", "expected_body"),
+    [
+        ("global", b"global connection limit exceeded"),
+        (None, b"Connection limit exceeded"),
+    ],
+)
+def test_connection_limited_response_body(limit_type, expected_body) -> None:
+    """The 503 body names the limit type, or falls back to a generic message."""
 
-    response = connection_limited_response("global", SECURITY_HEADERS)
+    response = connection_limited_response(limit_type, SECURITY_HEADERS)
     assert response.status_line == "HTTP/1.1 503 Service Unavailable"
-    assert response.body == b"global connection limit exceeded"
-    assert response.headers["Retry-After"] == "1"
-
-
-def test_connection_limited_response_without_limit_type() -> None:
-    """An absent limit type yields the generic 503 body."""
-
-    response = connection_limited_response(None, SECURITY_HEADERS)
-    assert response.status_line == "HTTP/1.1 503 Service Unavailable"
-    assert response.body == b"Connection limit exceeded"
+    assert response.body == expected_body
     assert response.headers["Retry-After"] == "1"
 
 
