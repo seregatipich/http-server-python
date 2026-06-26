@@ -134,6 +134,18 @@ def test_api_key_authenticator_rejects_missing_or_wrong_scheme():
     assert authenticator.authenticate({"authorization": "Bearer x"}) is None
 
 
+def test_api_key_authenticator_accepts_case_insensitive_scheme():
+    """The auth scheme token is matched case-insensitively per RFC 7235."""
+    config = AuthConfig(
+        mode="api-key",
+        credentials={"reader": _sha256_hex("s3cret")},
+        roles={"reader": ["files:read"]},
+    )
+    authenticator = ApiKeyAuthenticator(config)
+    assert authenticator.authenticate({"authorization": "apikey s3cret"}) is not None
+    assert authenticator.authenticate({"authorization": "APIKEY s3cret"}) is not None
+
+
 def test_api_key_authenticator_challenge():
     """The api-key challenge advertises the ApiKey scheme."""
     authenticator = ApiKeyAuthenticator(AuthConfig(mode="api-key"))

@@ -57,5 +57,5 @@ def is_not_modified(
     if "if-modified-since" in request_headers:
         since = parse_http_date(request_headers["if-modified-since"])
         if since is not None:
-            return last_modified_epoch <= since
+            return int(last_modified_epoch) <= since
     return False

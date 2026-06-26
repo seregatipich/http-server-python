@@ -3,7 +3,7 @@
 import pytest
 
 from pyhttpd.application import build_chain, make_metrics_middleware
-from pyhttpd.domain import HttpResponse, NotFound
+from pyhttpd.domain import HttpResponse, InternalServerError, NotFound
 from tests.unit._helpers import make_context, make_request
 
 
@@ -56,8 +56,8 @@ def test_successful_request_is_observed_with_balanced_in_flight():
     assert sink.in_flight == 0
 
 
-def test_raised_error_increments_error_counter_and_reraises():
-    """An exception in the chain is counted as an error and propagated."""
+def test_client_error_is_observed_but_not_counted_as_error():
+    """A raised 4xx is recorded as a request but not as a server error."""
     sink = RecordingSink()
 
     def boom(request, ctx):
@@ -68,7 +68,24 @@ def test_raised_error_increments_error_counter_and_reraises():
     with pytest.raises(NotFound):
         handler(make_request("/missing"), make_context())
 
-    assert sink.errors == [("GET", "/missing")]
+    assert sink.errors == []
+    assert sink.requests == [("GET", "/missing", 404)]
+    assert sink.in_flight == 0
+
+
+def test_server_error_increments_error_counter_and_reraises():
+    """A raised 5xx is counted as an error and propagated."""
+    sink = RecordingSink()
+
+    def boom(request, ctx):
+        raise InternalServerError("boom")
+
+    handler = build_chain([make_metrics_middleware(sink, _route_label)], boom)
+
+    with pytest.raises(InternalServerError):
+        handler(make_request("/crash"), make_context())
+
+    assert sink.errors == [("GET", "/crash")]
     assert sink.in_flight == 0
 
 

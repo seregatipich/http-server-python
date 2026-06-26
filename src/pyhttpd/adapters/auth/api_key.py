@@ -23,7 +23,7 @@ class ApiKeyAuthenticator:
         """Return the principal for a recognized key, or None."""
         header = headers.get("authorization", "")
         scheme, _, presented = header.partition(" ")
-        if scheme != "ApiKey" or not presented:
+        if scheme.lower() != "apikey" or not presented:
             return None
         presented_hash = hashlib.sha256(presented.encode()).hexdigest()
         for identity, stored_hash in self._credentials.items():

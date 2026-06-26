@@ -121,7 +121,7 @@ class JwtAuthenticator:
         """Return the principal for a valid Bearer token, or None."""
         header = headers.get("authorization", "")
         scheme, _, token = header.partition(" ")
-        if scheme != "Bearer" or not token:
+        if scheme.lower() != "bearer" or not token:
             return None
         try:
             claims = decode_hs256(

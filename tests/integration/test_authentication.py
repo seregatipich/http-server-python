@@ -93,6 +93,32 @@ def test_writer_can_post_files(authed_server_process: "ServerProcessInfo") -> No
     assert response.status_code == 201
 
 
+def test_reader_cannot_put_or_delete_files(
+    authed_server_process: "ServerProcessInfo",
+) -> None:
+    """A reader lacking files:write is forbidden from PUT and DELETE."""
+    base_url = authed_server_process["base_url"]
+    headers = {"Authorization": f"ApiKey {READER_KEY}"}
+    put = requests.put(f"{base_url}/files/x.txt", headers=headers, data=b"x", timeout=5)
+    delete = requests.delete(f"{base_url}/files/x.txt", headers=headers, timeout=5)
+    assert put.status_code == 403
+    assert delete.status_code == 403
+
+
+def test_writer_can_put_and_delete_files(
+    authed_server_process: "ServerProcessInfo",
+) -> None:
+    """A writer with files:write may PUT then DELETE a file."""
+    base_url = authed_server_process["base_url"]
+    headers = {"Authorization": f"ApiKey {WRITER_KEY}"}
+    created = requests.put(
+        f"{base_url}/files/w.txt", headers=headers, data=b"data", timeout=5
+    )
+    deleted = requests.delete(f"{base_url}/files/w.txt", headers=headers, timeout=5)
+    assert created.status_code == 201
+    assert deleted.status_code == 204
+
+
 def test_healthz_is_public(authed_server_process: "ServerProcessInfo") -> None:
     """The health endpoint stays reachable without credentials."""
     base_url = authed_server_process["base_url"]

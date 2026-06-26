@@ -45,17 +45,19 @@ def test_principal_is_frozen():
     "path, method, expected",
     [
         ("/files/report.txt", "GET", "files:read"),
+        ("/files/report.txt", "HEAD", "files:read"),
         ("/files/report.txt", "POST", "files:write"),
+        ("/files/report.txt", "PUT", "files:write"),
+        ("/files/report.txt", "DELETE", "files:write"),
         ("/files", "GET", "files:read"),
         ("/files/", "POST", "files:write"),
         ("/healthz", "GET", None),
         ("/", "GET", None),
         ("/filesystem", "GET", None),
-        ("/files/report.txt", "DELETE", None),
     ],
 )
 def test_required_scope_maps_path_and_method(path, method, expected):
-    """The RBAC table maps /files reads and writes, leaving others open."""
+    """The RBAC table gates /files reads (GET/HEAD) and writes (POST/PUT/DELETE)."""
     assert required_scope(path, method) == expected
 
 

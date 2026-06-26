@@ -36,7 +36,8 @@ def make_metrics_middleware(
         try:
             response = nxt(request, ctx)
         except HttpError as error:
-            sink.inc_error(request.method, route)
+            if error.status >= 500:
+                sink.inc_error(request.method, route)
             sink.observe_request(
                 request.method,
                 route,

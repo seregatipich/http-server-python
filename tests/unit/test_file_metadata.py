@@ -44,6 +44,15 @@ def test_is_not_modified_handles_weak_and_lists():
     assert is_not_modified(etag, 1000.0, {"if-none-match": f'"x", {etag}'})
 
 
+def test_is_not_modified_handles_fractional_mtime():
+    """If-Modified-Since compares at whole-second resolution (matches Last-Modified)."""
+    fractional = 1_700_000_000.654
+    echoed = http_date(fractional)  # truncated to whole seconds
+    assert is_not_modified(
+        compute_etag(1, 2), fractional, {"if-modified-since": echoed}
+    )
+
+
 def test_is_not_modified_uses_modified_since_when_no_etag_header():
     """If-Modified-Since returns not-modified when file is older or equal."""
     last_modified = 1_700_000_000.0

@@ -50,25 +50,33 @@ from pyhttpd.domain import (
 __all__ = ["handle_client", "_recv_with_deadline"]
 
 
+_KNOWN_ROUTE_LABELS = ("/healthz", "/user-agent", "/metrics", "/")
+
+
 def _route_label(request: HttpRequest) -> str:
-    """Collapse high-cardinality paths to bounded metric route labels."""
+    """Map a request to a bounded metric route label (never client-controlled)."""
     if request.path.startswith("/echo/"):
         return "/echo/"
     if request.path.startswith("/files/"):
         return "/files/"
-    return request.path
+    if request.path in _KNOWN_ROUTE_LABELS:
+        return request.path
+    return "other"
 
 
 def _strip_body_for_head(response: HttpResponse) -> HttpResponse:
-    """Return a HEAD response: same headers and length, no body."""
+    """Return a HEAD response: same headers as GET, no body."""
+    if response.use_chunked:
+        # Preserve Transfer-Encoding: chunked semantics; emit no body and no
+        # misleading Content-Length for a resource of unknown length.
+        return replace(response, body=b"", body_iter=None)
     length = response.content_length
-    if length is None and not response.use_chunked:
+    if length is None:
         length = len(response.body)
     return replace(
         response,
         body=b"",
         body_iter=None,
-        use_chunked=False,
         content_length=length,
     )
 
@@ -118,6 +126,16 @@ def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes:
     return build_chain(middlewares, terminal)
 
 
+def _apply_handler_timeout(
+    client_socket: socket.socket, context: WorkerContext
+) -> None:
+    """Give the handler/write phase its own deadline, not the residual read one."""
+    if context.phase_timeouts is not None:
+        client_socket.settimeout(context.phase_timeouts.handler_seconds)
+    elif context.config is not None:
+        client_socket.settimeout(context.config.socket_timeout)
+
+
 def _process_request(
     request: HttpRequest,
     context: WorkerContext,
@@ -138,6 +156,7 @@ def _process_request(
     except Exception as error:  # pylint: disable=broad-except
         log_worker_error(error, client_addr_str)
         response = ErrorMapper.internal_error(request, context.cors_config)
+    _apply_handler_timeout(client_socket, context)
     send_response(client_socket, response)
     return response.close_connection
 

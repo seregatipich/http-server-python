@@ -122,4 +122,21 @@ def test_gzip_compresses_eligible_files(
     )
     assert response.status_code == 200
     assert response.headers.get("Content-Encoding") == "gzip"
+    assert response.headers.get("Vary") == "Accept-Encoding"
     assert response.content == b"x" * 500
+
+
+def test_gzip_not_applied_without_accept_encoding(
+    gzip_server_process: "ServerProcessInfo",
+) -> None:
+    """An identity-only client never receives a gzip-encoded body."""
+    _write(gzip_server_process, "plain.txt", b"y" * 500)
+    base_url = gzip_server_process["base_url"]
+    response = requests.get(
+        f"{base_url}/files/plain.txt",
+        headers={"Accept-Encoding": "identity"},
+        timeout=5,
+    )
+    assert response.status_code == 200
+    assert "Content-Encoding" not in response.headers
+    assert response.content == b"y" * 500

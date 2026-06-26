@@ -7,7 +7,10 @@ DEFAULT_AUTH_MODE = "none"
 
 RBAC_POLICY: tuple[tuple[str, str, str], ...] = (
     ("/files", "GET", "files:read"),
+    ("/files", "HEAD", "files:read"),
     ("/files", "POST", "files:write"),
+    ("/files", "PUT", "files:write"),
+    ("/files", "DELETE", "files:write"),
 )
 
 

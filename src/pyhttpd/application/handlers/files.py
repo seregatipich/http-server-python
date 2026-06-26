@@ -9,7 +9,7 @@ from typing import Callable, Iterator, Optional
 
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.cors_headers import apply_cors_headers
-from pyhttpd.application.rendering import empty_response
+from pyhttpd.application.rendering import accepts_gzip, empty_response
 from pyhttpd.domain import (
     FILES_ENDPOINT_PREFIX,
     SECURITY_HEADERS,
@@ -180,6 +180,7 @@ def _gzip_response(
     compressed = gzip.compress(resolved_path.read_bytes())
     headers = dict(headers)
     headers["Content-Encoding"] = "gzip"
+    headers["Vary"] = "Accept-Encoding"
     return HttpResponse(
         "HTTP/1.1 200 OK",
         headers,
@@ -236,7 +237,9 @@ def _get_file_response(
         if parsed is not None:
             raise RangeNotSatisfiable(file_size)
 
-    if _gzip_eligible(content_type, file_size, options):
+    if _gzip_eligible(content_type, file_size, options) and accepts_gzip(
+        request.headers
+    ):
         return _gzip_response(request, resolved_path, headers)
 
     logger.log(logging.INFO, "file_read_complete", path=resolved_path.as_posix())
