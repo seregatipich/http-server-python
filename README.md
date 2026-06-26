@@ -199,8 +199,12 @@ default, so it never appears unless explicitly enabled.
 ## API documentation
 
 The full endpoint surface — methods, status codes, conditional/range behavior,
-auth schemes, and response headers — is described in an OpenAPI 3.1 spec at
-[`docs/openapi.yaml`](docs/openapi.yaml).
+auth schemes, and response headers — is described in an OpenAPI 3.1 spec rooted
+at [`docs/openapi.yaml`](docs/openapi.yaml), which references the path items in
+[`docs/openapi.paths.yaml`](docs/openapi.paths.yaml) and the reusable parameters,
+headers, and responses in
+[`docs/openapi.components.yaml`](docs/openapi.components.yaml). The split spec is
+validated end-to-end in `tests/unit/test_openapi_spec.py`.
 
 ## Deployment
 

@@ -1,0 +1,468 @@
+# OpenAPI path items, keyed by operation group.
+# Referenced from openapi.yaml; $refs resolve into openapi.components.yaml.
+Index:
+  get:
+    tags: [core]
+    summary: Serve the sandbox index document
+    description: |
+      Returns the `index.html` document from the configured `--directory` when it
+      exists, streamed with a guessed `Content-Type` via chunked transfer encoding.
+      When no index document is present, responds `200 OK` with an empty body.
+    operationId: getIndex
+    responses:
+      "200":
+        description: |
+          The index document, or an empty body when no `index.html` is present.
+        headers:
+          Strict-Transport-Security:
+            $ref: "./openapi.components.yaml#/headers/StrictTransportSecurity"
+          Content-Security-Policy:
+            $ref: "./openapi.components.yaml#/headers/ContentSecurityPolicy"
+          X-Content-Type-Options:
+            $ref: "./openapi.components.yaml#/headers/XContentTypeOptions"
+        content:
+          text/html:
+            schema:
+              type: string
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      "401":
+        $ref: "./openapi.components.yaml#/responses/Unauthorized"
+      "405":
+        $ref: "./openapi.components.yaml#/responses/MethodNotAllowed"
+      "500":
+        $ref: "./openapi.components.yaml#/responses/InternalServerError"
+      "503":
+        $ref: "./openapi.components.yaml#/responses/ServiceUnavailable"
+  head:
+    tags: [core]
+    summary: Index document headers without a body
+    operationId: headIndex
+    responses:
+      "200":
+        description: Same headers as `GET /`, with no message body.
+        headers:
+          Strict-Transport-Security:
+            $ref: "./openapi.components.yaml#/headers/StrictTransportSecurity"
+          Content-Security-Policy:
+            $ref: "./openapi.components.yaml#/headers/ContentSecurityPolicy"
+          X-Content-Type-Options:
+            $ref: "./openapi.components.yaml#/headers/XContentTypeOptions"
+      "401":
+        $ref: "./openapi.components.yaml#/responses/Unauthorized"
+      "405":
+        $ref: "./openapi.components.yaml#/responses/MethodNotAllowed"
+
+Healthz:
+  get:
+    tags: [health]
+    summary: Liveness and readiness probe
+    description: |
+      Public, never authenticated. Returns `200 OK` during normal operation and
+      `503 Service Unavailable` (body `draining`, `Connection: close`) while the
+      server is draining after receiving SIGTERM/SIGINT.
+    operationId: getHealthz
+    security: []
+    responses:
+      "200":
+        description: The server is healthy and accepting traffic. Empty body.
+        headers:
+          Strict-Transport-Security:
+            $ref: "./openapi.components.yaml#/headers/StrictTransportSecurity"
+          Content-Security-Policy:
+            $ref: "./openapi.components.yaml#/headers/ContentSecurityPolicy"
+          X-Content-Type-Options:
+            $ref: "./openapi.components.yaml#/headers/XContentTypeOptions"
+      "503":
+        description: The server is draining and not accepting new work.
+        headers:
+          Connection:
+            $ref: "./openapi.components.yaml#/headers/Connection"
+          Strict-Transport-Security:
+            $ref: "./openapi.components.yaml#/headers/StrictTransportSecurity"
+          Content-Security-Policy:
+            $ref: "./openapi.components.yaml#/headers/ContentSecurityPolicy"
+          X-Content-Type-Options:
+            $ref: "./openapi.components.yaml#/headers/XContentTypeOptions"
+        content:
+          text/plain:
+            schema:
+              type: string
+              example: draining
+      "405":
+        $ref: "./openapi.components.yaml#/responses/MethodNotAllowed"
+
+Echo:
+  get:
+    tags: [core]
+    summary: Echo the path suffix as plain text
+    description: |
+      Reflects the path segment after `/echo/` back to the caller as `text/plain`.
+      Compresses the body with gzip when the request advertises
+      `Accept-Encoding: gzip` (q>0).
+    operationId: getEcho
+    parameters:
+      - $ref: "./openapi.components.yaml#/parameters/MessagePath"
+      - $ref: "./openapi.components.yaml#/parameters/AcceptEncoding"
+    responses:
+      "200":
+        description: The echoed message.
+        headers:
+          Content-Encoding:
+            $ref: "./openapi.components.yaml#/headers/ContentEncoding"
+          Strict-Transport-Security:
+            $ref: "./openapi.components.yaml#/headers/StrictTransportSecurity"
+          Content-Security-Policy:
+            $ref: "./openapi.components.yaml#/headers/ContentSecurityPolicy"
+          X-Content-Type-Options:
+            $ref: "./openapi.components.yaml#/headers/XContentTypeOptions"
+        content:
+          text/plain:
+            schema:
+              type: string
+              example: hello
+      "401":
+        $ref: "./openapi.components.yaml#/responses/Unauthorized"
+      "405":
+        $ref: "./openapi.components.yaml#/responses/MethodNotAllowed"
+      "500":
+        $ref: "./openapi.components.yaml#/responses/InternalServerError"
+
+UserAgent:
+  get:
+    tags: [core]
+    summary: Reflect the request User-Agent header
+    description: |
+      Returns the value of the request `User-Agent` header as `text/plain`
+      (empty when the header is absent). Compresses with gzip when negotiated.
+    operationId: getUserAgent
+    parameters:
+      - $ref: "./openapi.components.yaml#/parameters/UserAgent"
+      - $ref: "./openapi.components.yaml#/parameters/AcceptEncoding"
+    responses:
+      "200":
+        description: The reflected User-Agent value.
+        headers:
+          Content-Encoding:
+            $ref: "./openapi.components.yaml#/headers/ContentEncoding"
+          Strict-Transport-Security:
+            $ref: "./openapi.components.yaml#/headers/StrictTransportSecurity"
+          Content-Security-Policy:
+            $ref: "./openapi.components.yaml#/headers/ContentSecurityPolicy"
+          X-Content-Type-Options:
+            $ref: "./openapi.components.yaml#/headers/XContentTypeOptions"
+        content:
+          text/plain:
+            schema:
+              type: string
+              example: curl/8.7.1
+      "401":
+        $ref: "./openapi.components.yaml#/responses/Unauthorized"
+      "405":
+        $ref: "./openapi.components.yaml#/responses/MethodNotAllowed"
+      "500":
+        $ref: "./openapi.components.yaml#/responses/InternalServerError"
+
+Files:
+  parameters:
+    - $ref: "./openapi.components.yaml#/parameters/FilePath"
+  get:
+    tags: [files]
+    summary: Download a sandboxed file
+    description: |
+      Streams a file from the configured `--directory`. Full responses carry
+      `Content-Length`, a strong-ish `ETag` (blake2b of size and mtime),
+      `Last-Modified`, and `Accept-Ranges: bytes`. When `--file-cache-control` is set
+      its value is returned as `Cache-Control`. When `--file-gzip` is enabled and the
+      content type and size are eligible, the body is returned with
+      `Content-Encoding: gzip`.
+
+      Conditional and range semantics:
+      - `Range: bytes=...` yields `206 Partial Content` with a `Content-Range` header,
+        or `416 Range Not Satisfiable` (with `Content-Range: bytes */<size>`) when the
+        range cannot be satisfied.
+      - `If-None-Match` or `If-Modified-Since` that match the current validators yield
+        `304 Not Modified`.
+
+      When authentication is enabled this route additionally requires the
+      `files:read` scope.
+    operationId: getFile
+    parameters:
+      - $ref: "./openapi.components.yaml#/parameters/Range"
+      - $ref: "./openapi.components.yaml#/parameters/IfNoneMatch"
+      - $ref: "./openapi.components.yaml#/parameters/IfModifiedSince"
+      - $ref: "./openapi.components.yaml#/parameters/AcceptEncoding"
+    responses:
+      "200":
+        $ref: "./openapi.components.yaml#/responses/FileContent"
+      "206":
+        $ref: "./openapi.components.yaml#/responses/FilePartialContent"
+      "304":
+        $ref: "./openapi.components.yaml#/responses/NotModified"
+      "401":
+        $ref: "./openapi.components.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "./openapi.components.yaml#/responses/Forbidden"
+      "404":
+        $ref: "./openapi.components.yaml#/responses/NotFound"
+      "405":
+        $ref: "./openapi.components.yaml#/responses/MethodNotAllowedFiles"
+      "416":
+        $ref: "./openapi.components.yaml#/responses/RangeNotSatisfiable"
+      "429":
+        $ref: "./openapi.components.yaml#/responses/TooManyRequests"
+      "500":
+        $ref: "./openapi.components.yaml#/responses/InternalServerError"
+      "503":
+        $ref: "./openapi.components.yaml#/responses/ServiceUnavailable"
+  head:
+    tags: [files]
+    summary: File metadata headers without a body
+    description: |
+      Identical header semantics to `GET /files/{path}` (including conditional and
+      range handling and the same status codes) but with no message body.
+    operationId: headFile
+    parameters:
+      - $ref: "./openapi.components.yaml#/parameters/Range"
+      - $ref: "./openapi.components.yaml#/parameters/IfNoneMatch"
+      - $ref: "./openapi.components.yaml#/parameters/IfModifiedSince"
+    responses:
+      "200":
+        description: File headers with no body.
+        headers:
+          Content-Length:
+            $ref: "./openapi.components.yaml#/headers/ContentLength"
+          ETag:
+            $ref: "./openapi.components.yaml#/headers/ETag"
+          Last-Modified:
+            $ref: "./openapi.components.yaml#/headers/LastModified"
+          Accept-Ranges:
+            $ref: "./openapi.components.yaml#/headers/AcceptRanges"
+          Cache-Control:
+            $ref: "./openapi.components.yaml#/headers/CacheControl"
+          Strict-Transport-Security:
+            $ref: "./openapi.components.yaml#/headers/StrictTransportSecurity"
+          Content-Security-Policy:
+            $ref: "./openapi.components.yaml#/headers/ContentSecurityPolicy"
+          X-Content-Type-Options:
+            $ref: "./openapi.components.yaml#/headers/XContentTypeOptions"
+      "206":
+        description: Partial content headers with no body.
+        headers:
+          Content-Range:
+            $ref: "./openapi.components.yaml#/headers/ContentRange"
+          Content-Length:
+            $ref: "./openapi.components.yaml#/headers/ContentLength"
+          ETag:
+            $ref: "./openapi.components.yaml#/headers/ETag"
+          Last-Modified:
+            $ref: "./openapi.components.yaml#/headers/LastModified"
+          Accept-Ranges:
+            $ref: "./openapi.components.yaml#/headers/AcceptRanges"
+          Strict-Transport-Security:
+            $ref: "./openapi.components.yaml#/headers/StrictTransportSecurity"
+          Content-Security-Policy:
+            $ref: "./openapi.components.yaml#/headers/ContentSecurityPolicy"
+          X-Content-Type-Options:
+            $ref: "./openapi.components.yaml#/headers/XContentTypeOptions"
+      "304":
+        $ref: "./openapi.components.yaml#/responses/NotModified"
+      "401":
+        $ref: "./openapi.components.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "./openapi.components.yaml#/responses/Forbidden"
+      "404":
+        $ref: "./openapi.components.yaml#/responses/NotFound"
+      "416":
+        $ref: "./openapi.components.yaml#/responses/RangeNotSatisfiable"
+  post:
+    tags: [files]
+    summary: Create a sandboxed file
+    description: |
+      Writes the raw request body to `--directory/<path>`, creating parent directories
+      as needed, and responds `201 Created`. A valid `Content-Length` matching the body
+      length is mandatory: a missing or non-numeric value, a length that disagrees with
+      the body, or a body larger than the configured maximum
+      (`HTTP_SERVER_MAX_BODY_BYTES`, default 5 MiB) are rejected.
+
+      When authentication is enabled this route additionally requires the
+      `files:write` scope.
+    operationId: createFile
+    requestBody:
+      required: true
+      description: Raw bytes to persist at the target path.
+      content:
+        application/octet-stream:
+          schema:
+            type: string
+            format: binary
+    responses:
+      "201":
+        $ref: "./openapi.components.yaml#/responses/FileWritten"
+      "400":
+        $ref: "./openapi.components.yaml#/responses/BadRequest"
+      "401":
+        $ref: "./openapi.components.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "./openapi.components.yaml#/responses/Forbidden"
+      "405":
+        $ref: "./openapi.components.yaml#/responses/MethodNotAllowedFiles"
+      "413":
+        $ref: "./openapi.components.yaml#/responses/PayloadTooLarge"
+      "429":
+        $ref: "./openapi.components.yaml#/responses/TooManyRequests"
+      "500":
+        $ref: "./openapi.components.yaml#/responses/InternalServerError"
+      "503":
+        $ref: "./openapi.components.yaml#/responses/ServiceUnavailable"
+  put:
+    tags: [files]
+    summary: Create or overwrite a sandboxed file
+    description: |
+      Writes the raw request body to `--directory/<path>`. Responds `201 Created` when
+      the target did not previously exist and `204 No Content` when it overwrites an
+      existing file. Targeting an existing directory is rejected with `403 Forbidden`.
+      When authentication is enabled a valid principal is required.
+    operationId: putFile
+    requestBody:
+      required: true
+      description: Raw bytes to persist at the target path.
+      content:
+        application/octet-stream:
+          schema:
+            type: string
+            format: binary
+    responses:
+      "201":
+        $ref: "./openapi.components.yaml#/responses/FileWritten"
+      "204":
+        $ref: "./openapi.components.yaml#/responses/FileOverwritten"
+      "401":
+        $ref: "./openapi.components.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "./openapi.components.yaml#/responses/Forbidden"
+      "405":
+        $ref: "./openapi.components.yaml#/responses/MethodNotAllowedFiles"
+      "429":
+        $ref: "./openapi.components.yaml#/responses/TooManyRequests"
+      "500":
+        $ref: "./openapi.components.yaml#/responses/InternalServerError"
+      "503":
+        $ref: "./openapi.components.yaml#/responses/ServiceUnavailable"
+  delete:
+    tags: [files]
+    summary: Delete a sandboxed file
+    description: |
+      Removes `--directory/<path>`. Responds `204 No Content` on success and
+      `404 Not Found` when the file does not exist. Targeting a directory is rejected
+      with `403 Forbidden`. When authentication is enabled a valid principal is
+      required.
+    operationId: deleteFile
+    responses:
+      "204":
+        $ref: "./openapi.components.yaml#/responses/FileDeleted"
+      "401":
+        $ref: "./openapi.components.yaml#/responses/Unauthorized"
+      "403":
+        $ref: "./openapi.components.yaml#/responses/Forbidden"
+      "404":
+        $ref: "./openapi.components.yaml#/responses/NotFound"
+      "405":
+        $ref: "./openapi.components.yaml#/responses/MethodNotAllowedFiles"
+      "429":
+        $ref: "./openapi.components.yaml#/responses/TooManyRequests"
+      "500":
+        $ref: "./openapi.components.yaml#/responses/InternalServerError"
+      "503":
+        $ref: "./openapi.components.yaml#/responses/ServiceUnavailable"
+  options:
+    tags: [files]
+    summary: CORS preflight
+    description: |
+      When CORS is configured (`--cors-*` flags), an `OPTIONS` request carrying
+      `Access-Control-Request-Method` is answered directly with `204 No Content` and
+      the negotiated `Access-Control-*` headers, without invoking the file handler.
+      Preflight is exempt from authentication. This behavior applies to every route,
+      not only `/files/*`.
+    operationId: preflightFile
+    security: []
+    parameters:
+      - $ref: "./openapi.components.yaml#/parameters/Origin"
+      - $ref: "./openapi.components.yaml#/parameters/AccessControlRequestMethod"
+      - $ref: "./openapi.components.yaml#/parameters/AccessControlRequestHeaders"
+    responses:
+      "204":
+        description: Preflight accepted.
+        headers:
+          Access-Control-Allow-Origin:
+            $ref: "./openapi.components.yaml#/headers/AccessControlAllowOrigin"
+          Access-Control-Allow-Methods:
+            $ref: "./openapi.components.yaml#/headers/AccessControlAllowMethods"
+          Access-Control-Allow-Headers:
+            $ref: "./openapi.components.yaml#/headers/AccessControlAllowHeaders"
+          Access-Control-Allow-Credentials:
+            $ref: "./openapi.components.yaml#/headers/AccessControlAllowCredentials"
+          Access-Control-Max-Age:
+            $ref: "./openapi.components.yaml#/headers/AccessControlMaxAge"
+          Vary:
+            $ref: "./openapi.components.yaml#/headers/Vary"
+          Strict-Transport-Security:
+            $ref: "./openapi.components.yaml#/headers/StrictTransportSecurity"
+          Content-Security-Policy:
+            $ref: "./openapi.components.yaml#/headers/ContentSecurityPolicy"
+          X-Content-Type-Options:
+            $ref: "./openapi.components.yaml#/headers/XContentTypeOptions"
+
+Metrics:
+  get:
+    tags: [observability]
+    summary: Prometheus metrics exposition
+    description: |
+      Returns the Prometheus text exposition for request counters, the request-latency
+      histogram, the in-flight gauge, the error counter, and the rejection counter.
+
+      This route is **only registered when the server is started with `--metrics`**.
+      Without it, requests to `/metrics` fall through to the not-found handler and
+      return `404`. When authentication is enabled, `/metrics` is not public and
+      requires a valid principal.
+    operationId: getMetrics
+    responses:
+      "200":
+        description: Prometheus 0.0.4 text exposition.
+        headers:
+          Strict-Transport-Security:
+            $ref: "./openapi.components.yaml#/headers/StrictTransportSecurity"
+          Content-Security-Policy:
+            $ref: "./openapi.components.yaml#/headers/ContentSecurityPolicy"
+          X-Content-Type-Options:
+            $ref: "./openapi.components.yaml#/headers/XContentTypeOptions"
+        content:
+          text/plain; version=0.0.4; charset=utf-8:
+            schema:
+              type: string
+            example: |
+              # HELP http_requests_total Total HTTP requests.
+              # TYPE http_requests_total counter
+              http_requests_total{method="GET",route="/healthz",status="200"} 3
+              # HELP http_request_errors_total Total HTTP request errors.
+              # TYPE http_request_errors_total counter
+              # HELP http_request_duration_seconds Request latency in seconds.
+              # TYPE http_request_duration_seconds histogram
+              # HELP http_in_flight_requests In-flight HTTP requests.
+              # TYPE http_in_flight_requests gauge
+              http_in_flight_requests 0
+              # HELP http_rejections_total Total rejected connections.
+              # TYPE http_rejections_total counter
+      "401":
+        $ref: "./openapi.components.yaml#/responses/Unauthorized"
+      "404":
+        description: Metrics are disabled (server started without `--metrics`).
+        headers:
+          Strict-Transport-Security:
+            $ref: "./openapi.components.yaml#/headers/StrictTransportSecurity"
+          Content-Security-Policy:
+            $ref: "./openapi.components.yaml#/headers/ContentSecurityPolicy"
+          X-Content-Type-Options:
+            $ref: "./openapi.components.yaml#/headers/XContentTypeOptions"
