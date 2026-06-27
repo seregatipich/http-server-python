@@ -10,6 +10,7 @@ from pyhttpd.adapters.logging.correlation_adapter import (
     get_correlation_id,
     set_correlation_id,
 )
+from pyhttpd.adapters.transport.channel import SocketChannel
 from pyhttpd.adapters.transport.context import WorkerContext
 from pyhttpd.adapters.transport.io import send_response
 from pyhttpd.adapters.transport.request_reader import (
@@ -113,9 +114,29 @@ def _process_request(
         response = ErrorMapper.internal_error(
             request, context.cors_config, ctx.error_format, ctx.correlation_id
         )
-    _apply_handler_timeout(client_socket, context)
+    if response.upgrade is not None:
+        return _perform_upgrade(client_socket, response)
+    if not response.streaming:
+        _apply_handler_timeout(client_socket, context)
     send_response(client_socket, response)
     return response.close_connection
+
+
+def _perform_upgrade(client_socket: socket.socket, response: HttpResponse) -> bool:
+    """Write the handshake headers verbatim, then hand the socket to the driver.
+
+    Upgrade responses (101 Switching Protocols) carry no body and must not be
+    reframed with Content-Length/Connection, so the handshake block is written
+    directly. The socket switches to blocking so the protocol driver owns its
+    own read deadlines; the connection always closes when the driver returns.
+    """
+    header_lines = [response.status_line]
+    header_lines.extend(f"{name}: {value}" for name, value in response.headers.items())
+    client_socket.sendall("\r\n".join(header_lines).encode() + b"\r\n\r\n")
+    client_socket.settimeout(None)
+    assert response.upgrade is not None
+    response.upgrade(SocketChannel(client_socket))
+    return True
 
 
 def _process_client_requests(

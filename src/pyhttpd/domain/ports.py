@@ -48,6 +48,23 @@ class SessionStore(Protocol):
         """Return the session data, or None when missing or expired."""
 
 
+class Channel(Protocol):
+    """Bidirectional byte stream a handler may take over after the handshake.
+
+    Defined without importing ``socket`` so the domain stays transport-agnostic;
+    an adapter wraps the real connection to satisfy it.
+    """
+
+    def read(self, size: int) -> bytes:
+        """Read up to ``size`` bytes; an empty result signals end of stream."""
+
+    def write(self, data: bytes) -> None:
+        """Write all of ``data`` to the peer."""
+
+    def close(self) -> None:
+        """Close the underlying connection."""
+
+
 class Logger(Protocol):
     """Structured logger sink."""
 

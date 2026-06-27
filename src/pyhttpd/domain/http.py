@@ -1,7 +1,9 @@
 """HTTP request and response value types."""
 
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
+
+from pyhttpd.domain.ports import Channel
 
 
 @dataclass
@@ -16,7 +18,7 @@ class HttpRequest:
 
 
 @dataclass
-class HttpResponse:
+class HttpResponse:  # pylint: disable=too-many-instance-attributes
     """Represents an HTTP response to be sent to a client."""
 
     status_line: str
@@ -26,6 +28,8 @@ class HttpResponse:
     body_iter: Optional[Iterable[bytes]] = None
     use_chunked: bool = False
     content_length: Optional[int] = None
+    streaming: bool = False
+    upgrade: Optional[Callable[[Channel], None]] = None
 
 
 def should_close(headers: dict[str, str]) -> bool:
