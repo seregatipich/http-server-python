@@ -29,3 +29,4 @@ class WorkerContext:  # pylint: disable=too-many-instance-attributes
     proxy_timeout: float = 30.0
     vhost_directories: Optional[dict] = None
     access_logger: Optional[Any] = None
+    client_cert_roles: Optional[dict] = None

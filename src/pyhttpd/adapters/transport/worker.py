@@ -4,6 +4,7 @@ import socket
 import threading
 import time
 
+from pyhttpd.adapters.auth.client_cert import principal_from_peercert
 from pyhttpd.adapters.logging.correlation_adapter import (
     clear_correlation_id,
     generate_correlation_id,
@@ -37,6 +38,16 @@ from pyhttpd.domain import HttpError, HttpRequest, HttpResponse
 __all__ = ["handle_client", "_recv_with_deadline"]
 
 
+def _client_certificate_principal(client_socket: socket.socket, context: WorkerContext):
+    """Map a verified mutual-TLS client certificate to a Principal, if enabled."""
+    if context.client_cert_roles is None:
+        return None
+    getpeercert = getattr(client_socket, "getpeercert", None)
+    if getpeercert is None:
+        return None
+    return principal_from_peercert(getpeercert(), context.client_cert_roles)
+
+
 def _apply_handler_timeout(
     client_socket: socket.socket, context: WorkerContext
 ) -> None:
@@ -59,6 +70,7 @@ def _process_request(
         correlation_id=get_correlation_id(),
         start_ns=time.monotonic_ns(),
         error_format=context.error_format,
+        client_principal=_client_certificate_principal(client_socket, context),
     )
     chain = build_worker_chain(context, client_ip, max_body_bytes)
     try:
