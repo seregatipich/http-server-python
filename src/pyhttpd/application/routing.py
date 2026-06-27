@@ -8,7 +8,9 @@ from pyhttpd.application.handlers.echo import make_echo_handler
 from pyhttpd.application.handlers.files import make_files_handler, make_index_handler
 from pyhttpd.application.handlers.healthz import make_healthz_handler
 from pyhttpd.application.handlers.metrics import make_metrics_handler
+from pyhttpd.application.handlers.sse import make_sse_handler
 from pyhttpd.application.handlers.user_agent import make_user_agent_handler
+from pyhttpd.application.handlers.websocket import make_websocket_handler
 from pyhttpd.domain import (
     FILES_ENDPOINT_PREFIX,
     CorsConfig,
@@ -59,6 +61,8 @@ def make_default_router(
     cors_config: Optional[CorsConfig] = None,
     metrics_sink: Optional[MetricsSink] = None,
     file_options: Optional[FileServingOptions] = None,
+    enable_sse: bool = False,
+    enable_websocket: bool = False,
 ) -> Router:
     """Wire the default route table in legacy match order."""
     healthz = make_healthz_handler(draining_state, logger)
@@ -73,7 +77,27 @@ def make_default_router(
         Route(lambda request: request.path == "/user-agent", user_agent),
         Route(lambda request: request.path.startswith(FILES_ENDPOINT_PREFIX), files),
     ]
+    _append_optional_routes(
+        routes, draining_state, logger, metrics_sink, enable_sse, enable_websocket
+    )
+    return Router(routes)
+
+
+def _append_optional_routes(
+    routes: list[Route],
+    draining_state: Optional[DrainingState],
+    logger: Logger,
+    metrics_sink: Optional[MetricsSink],
+    enable_sse: bool,
+    enable_websocket: bool,
+) -> None:
+    """Append the opt-in metrics, SSE, and WebSocket routes when enabled."""
     if metrics_sink is not None:
         metrics = make_metrics_handler(metrics_sink)
         routes.append(Route(lambda request: request.path == "/metrics", metrics))
-    return Router(routes)
+    if enable_sse:
+        sse = make_sse_handler(draining_state, logger)
+        routes.append(Route(lambda request: request.path == "/events", sse))
+    if enable_websocket:
+        websocket = make_websocket_handler(draining_state, logger)
+        routes.append(Route(lambda request: request.path == "/ws", websocket))

@@ -11,10 +11,12 @@ from pyhttpd.application.context import RequestContext
 from pyhttpd.application.cors_headers import apply_cors_headers
 from pyhttpd.domain import (
     SECURITY_HEADERS,
+    BadGateway,
     BadRequest,
     CorsConfig,
     Forbidden,
     ForbiddenPath,
+    GatewayTimeout,
     HttpError,
     HttpRequest,
     HttpResponse,
@@ -349,6 +351,28 @@ def internal_error_response(
     )
 
 
+def bad_gateway_response(
+    request: Optional[HttpRequest],
+    cors_config: Optional[CorsConfig],
+    security_headers: dict[str, str],
+) -> HttpResponse:
+    """Produce a 502 response when an upstream is unreachable or invalid."""
+    return _request_response(
+        "HTTP/1.1 502 Bad Gateway", request, cors_config, security_headers
+    )
+
+
+def gateway_timeout_response(
+    request: Optional[HttpRequest],
+    cors_config: Optional[CorsConfig],
+    security_headers: dict[str, str],
+) -> HttpResponse:
+    """Produce a 504 response when an upstream exceeds the deadline."""
+    return _request_response(
+        "HTTP/1.1 504 Gateway Timeout", request, cors_config, security_headers
+    )
+
+
 def apply_error_format(
     response: HttpResponse,
     error_format: str,
@@ -416,6 +440,10 @@ class ErrorMapper:
             return rate_limited_response(error.decision, request, SECURITY_HEADERS)
         if isinstance(error, ServiceUnavailable):
             return draining_response(SECURITY_HEADERS)
+        if isinstance(error, BadGateway):
+            return bad_gateway_response(request, cors_config, SECURITY_HEADERS)
+        if isinstance(error, GatewayTimeout):
+            return gateway_timeout_response(request, cors_config, SECURITY_HEADERS)
         return internal_error_response(request, SECURITY_HEADERS)
 
     @staticmethod

@@ -320,7 +320,7 @@ def test_worker_logs_worker_error_and_sends_500(caplog):
         patch("pyhttpd.adapters.transport.request_reader.receive_request") as mock_recv,
         patch("pyhttpd.adapters.transport.worker.send_response") as mock_send,
         patch(
-            "pyhttpd.adapters.transport.worker._build_request_chain",
+            "pyhttpd.adapters.transport.worker.build_worker_chain",
             return_value=exploding_chain,
         ),
     ):

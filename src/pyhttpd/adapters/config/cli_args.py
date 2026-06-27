@@ -44,6 +44,9 @@ DEFAULT_JWT_SECRET = _env_str("HTTP_SERVER_JWT_SECRET", "")
 DEFAULT_JWT_ISSUER = _env_str("HTTP_SERVER_JWT_ISSUER", "")
 DEFAULT_JWT_AUDIENCE = _env_str("HTTP_SERVER_JWT_AUDIENCE", "")
 DEFAULT_METRICS_ENABLED = _env_bool("HTTP_SERVER_METRICS", False)
+DEFAULT_ENABLE_SSE = _env_bool("HTTP_SERVER_ENABLE_SSE", False)
+DEFAULT_ENABLE_WEBSOCKET = _env_bool("HTTP_SERVER_ENABLE_WEBSOCKET", False)
+DEFAULT_PROXY_TIMEOUT = float(_env_int("HTTP_SERVER_PROXY_TIMEOUT", 30))
 DEFAULT_FILE_CACHE_CONTROL = _env_str("HTTP_SERVER_FILE_CACHE_CONTROL", "")
 DEFAULT_FILE_GZIP = _env_bool("HTTP_SERVER_FILE_GZIP", False)
 DEFAULT_FILE_GZIP_MIN_BYTES = _env_int("HTTP_SERVER_FILE_GZIP_MIN_BYTES", 1024)
@@ -242,6 +245,18 @@ def _add_observability_args(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_ERROR_FORMAT,
         help="Error response body format (default: text)",
     )
+    parser.add_argument(
+        "--enable-sse",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_ENABLE_SSE,
+        help="Expose a Server-Sent Events stream at /events",
+    )
+    parser.add_argument(
+        "--enable-websocket",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_ENABLE_WEBSOCKET,
+        help="Expose a WebSocket echo endpoint at /ws",
+    )
 
 
 def _add_session_args(parser: argparse.ArgumentParser) -> None:
@@ -268,6 +283,30 @@ def _add_session_args(parser: argparse.ArgumentParser) -> None:
         choices=["Strict", "Lax", "None"],
         default=DEFAULT_SESSION_COOKIE_SAMESITE,
         help="SameSite attribute for the session cookie",
+    )
+
+
+def _add_proxy_args(parser: argparse.ArgumentParser) -> None:
+    """Add reverse-proxy arguments."""
+    parser.add_argument(
+        "--proxy-pass",
+        action="append",
+        default=None,
+        metavar="MOUNT=URL",
+        help="Forward a mount prefix to an upstream URL (repeatable)",
+    )
+    parser.add_argument(
+        "--proxy-allow-host",
+        action="append",
+        default=None,
+        metavar="HOST",
+        help="Permit an upstream host for --proxy-pass (repeatable, required)",
+    )
+    parser.add_argument(
+        "--proxy-timeout",
+        type=float,
+        default=DEFAULT_PROXY_TIMEOUT,
+        help="Upstream connect/read timeout in seconds",
     )
 
 
@@ -330,5 +369,6 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     _add_observability_args(parser)
     _add_request_framing_args(parser)
     _add_session_args(parser)
+    _add_proxy_args(parser)
     _add_file_serving_args(parser)
     return parser.parse_args(argv)

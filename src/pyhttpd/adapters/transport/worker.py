@@ -10,6 +10,8 @@ from pyhttpd.adapters.logging.correlation_adapter import (
     get_correlation_id,
     set_correlation_id,
 )
+from pyhttpd.adapters.transport.chain_builder import build_worker_chain
+from pyhttpd.adapters.transport.channel import SocketChannel
 from pyhttpd.adapters.transport.context import WorkerContext
 from pyhttpd.adapters.transport.io import send_response
 from pyhttpd.adapters.transport.request_reader import (
@@ -26,56 +28,13 @@ from pyhttpd.adapters.transport.worker_lifecycle import (
 )
 from pyhttpd.adapters.transport.worker_logging import (
     WORKER_LOGGER,
-    WORKER_PORT_LOGGER,
     log_worker_error,
 )
 from pyhttpd.application.context import RequestContext
-from pyhttpd.application.middleware.assembly import build_request_chain
-from pyhttpd.application.middleware.session import make_session_middleware
-from pyhttpd.application.pipeline import Handler
 from pyhttpd.application.rendering import ErrorMapper
-from pyhttpd.application.routing import make_default_router
 from pyhttpd.domain import HttpError, HttpRequest, HttpResponse
 
 __all__ = ["handle_client", "_recv_with_deadline"]
-
-
-def _build_request_chain(
-    context: WorkerContext, client_ip: str, max_body_bytes: int
-) -> Handler:
-    """Assemble the application middleware chain over the default router."""
-    router = make_default_router(
-        context.directory,
-        context.lifecycle,
-        WORKER_PORT_LOGGER,
-        context.cors_config,
-        context.metrics_sink,
-        context.file_options,
-    )
-    chain = build_request_chain(
-        router.dispatch,
-        cors_config=context.cors_config,
-        metrics_sink=context.metrics_sink,
-        rate_limiter=context.rate_limiter,
-        authenticator=context.authenticator,
-        logger=WORKER_PORT_LOGGER,
-        client_ip=client_ip,
-        max_body_bytes=max_body_bytes,
-    )
-    return _wrap_with_session(chain, context)
-
-
-def _wrap_with_session(chain: Handler, context: WorkerContext) -> Handler:
-    if context.session_store is None or context.session_policy is None:
-        return chain
-    session_middleware = make_session_middleware(
-        context.session_store, context.session_policy
-    )
-
-    def with_session(request: HttpRequest, ctx: RequestContext) -> HttpResponse:
-        return session_middleware(request, ctx, chain)
-
-    return with_session
 
 
 def _apply_handler_timeout(
@@ -101,7 +60,7 @@ def _process_request(
         start_ns=time.monotonic_ns(),
         error_format=context.error_format,
     )
-    chain = _build_request_chain(context, client_ip, max_body_bytes)
+    chain = build_worker_chain(context, client_ip, max_body_bytes)
     try:
         response = chain(request, ctx)
     except HttpError as error:
@@ -113,9 +72,29 @@ def _process_request(
         response = ErrorMapper.internal_error(
             request, context.cors_config, ctx.error_format, ctx.correlation_id
         )
-    _apply_handler_timeout(client_socket, context)
+    if response.upgrade is not None:
+        return _perform_upgrade(client_socket, response)
+    if not response.streaming:
+        _apply_handler_timeout(client_socket, context)
     send_response(client_socket, response)
     return response.close_connection
+
+
+def _perform_upgrade(client_socket: socket.socket, response: HttpResponse) -> bool:
+    """Write the handshake headers verbatim, then hand the socket to the driver.
+
+    Upgrade responses (101 Switching Protocols) carry no body and must not be
+    reframed with Content-Length/Connection, so the handshake block is written
+    directly. The socket switches to blocking so the protocol driver owns its
+    own read deadlines; the connection always closes when the driver returns.
+    """
+    header_lines = [response.status_line]
+    header_lines.extend(f"{name}: {value}" for name, value in response.headers.items())
+    client_socket.sendall("\r\n".join(header_lines).encode() + b"\r\n\r\n")
+    client_socket.settimeout(None)
+    assert response.upgrade is not None
+    response.upgrade(SocketChannel(client_socket))
+    return True
 
 
 def _process_client_requests(

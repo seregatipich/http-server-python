@@ -52,7 +52,7 @@ def test_unexpected_error_returns_500() -> None:
     context = _bare_context()
 
     with patch(
-        "pyhttpd.adapters.transport.worker.make_default_router",
+        "pyhttpd.adapters.transport.chain_builder.make_default_router",
         return_value=_BoomRouter(),
     ):
         handle_client(client_socket, ("127.0.0.1", 5555), context)

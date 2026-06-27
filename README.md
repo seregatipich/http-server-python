@@ -239,6 +239,61 @@ Cookie attributes are configurable: `--session-ttl` (seconds, sliding),
 (`Strict`/`Lax`/`None`). The cookie is always `HttpOnly` and scoped to `Path=/`.
 Sessions are single-process and do not survive a restart.
 
+## Server-Sent Events
+
+Pass `--enable-sse` (or `HTTP_SERVER_ENABLE_SSE=true`) to expose a streaming
+`GET /events` endpoint in `text/event-stream` format, built on the chunked
+streaming path:
+
+```bash
+pyhttpd --enable-sse
+curl -N "localhost:4221/events?count=5"   # id:/event:/data: frames, one per tick
+```
+
+The stream emits `count` heartbeat events (default 5, capped at 1000) and is
+drain-aware: a graceful shutdown ends the stream instead of holding the
+connection open. Each subscriber pins a worker thread for the stream's lifetime,
+so the connection cap bounds concurrent subscribers. The endpoint is off by
+default, so `/events` returns 404 unless explicitly enabled.
+
+## WebSocket
+
+Pass `--enable-websocket` (or `HTTP_SERVER_ENABLE_WEBSOCKET=true`) to expose a
+hand-rolled RFC 6455 echo endpoint at `/ws` (zero dependencies — the handshake
+and frame codec are built on `hashlib`, `base64`, and `struct`):
+
+```bash
+pyhttpd --enable-websocket
+# then connect with any WebSocket client to ws://localhost:4221/ws
+```
+
+The server validates the `Upgrade`/`Connection`/`Sec-WebSocket-Version: 13`
+handshake, replies with the `Sec-WebSocket-Accept` digest, then echoes text and
+binary messages, answers pings with pongs, reassembles fragmented messages, and
+performs the closing handshake. Client frames must be masked and text is
+UTF-8-validated (a violation closes with the appropriate status code); a
+graceful shutdown closes open sockets with `1001 Going Away`. The endpoint is
+off by default, so `/ws` returns 404 unless enabled.
+
+## Reverse proxy
+
+Mount an upstream with `--proxy-pass MOUNT=URL`; every request under `MOUNT` is
+forwarded (via stdlib `http.client`) and the upstream response streamed back. An
+explicit SSRF allowlist is required — a `--proxy-pass` whose host is not in
+`--proxy-allow-host` aborts startup:
+
+```bash
+pyhttpd --proxy-pass /api/=http://127.0.0.1:9000 --proxy-allow-host 127.0.0.1
+curl localhost:4221/api/users        # served by the upstream on :9000
+```
+
+Hop-by-hop headers (RFC 7230 §6.1) are stripped in both directions, the `Host`
+header is rewritten to the upstream, and `Via` / `X-Forwarded-For` /
+`X-Forwarded-Proto` are added. A known `Content-Length` is preserved; otherwise
+the body is re-framed as chunked. An unreachable upstream returns `502`, a slow
+one `504` (deadline via `--proxy-timeout`). Paths outside every mount are served
+locally as usual.
+
 ## API documentation
 
 The full endpoint surface — methods, status codes, conditional/range behavior,

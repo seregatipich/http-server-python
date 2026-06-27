@@ -23,3 +23,7 @@ class WorkerContext:  # pylint: disable=too-many-instance-attributes
     expect_continue: bool = False
     session_store: Optional[Any] = None
     session_policy: Optional[Any] = None
+    enable_sse: bool = False
+    enable_websocket: bool = False
+    proxy_targets: tuple = ()
+    proxy_timeout: float = 30.0
