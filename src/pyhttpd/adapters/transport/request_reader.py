@@ -4,6 +4,7 @@ import logging
 import socket
 from typing import Optional
 
+from pyhttpd.adapters.logging.correlation_adapter import get_correlation_id
 from pyhttpd.adapters.transport.io import (
     _recv_with_deadline,
     receive_request,
@@ -12,6 +13,7 @@ from pyhttpd.adapters.transport.io import (
 from pyhttpd.adapters.transport.wire import format_client_address
 from pyhttpd.adapters.transport.worker_logging import WORKER_LOGGER
 from pyhttpd.application.rendering import (
+    apply_error_format,
     bad_request_response,
     entity_too_large_response,
     forbidden_response,
@@ -36,13 +38,16 @@ def _reject(
     message: str,
     event: str,
     response: HttpResponse,
+    error_format: str = "text",
 ) -> tuple[Optional[HttpRequest], bytes, bool]:
     """Log a rejected request, send the error response, and signal termination."""
     WORKER_LOGGER.warning(
         message,
         extra={"event": event, "client": format_client_address(client_address)},
     )
-    send_response(client_socket, response)
+    send_response(
+        client_socket, apply_error_format(response, error_format, get_correlation_id())
+    )
     return None, b"", True
 
 
@@ -52,6 +57,7 @@ def _read_request_with_validation(
     client_address: tuple[str, int],
     max_body_bytes: int,
     timeouts: Optional[PhaseTimeouts] = None,
+    error_format: str = "text",
 ) -> tuple[Optional[HttpRequest], bytes, bool]:
     """Read a request from the socket while enforcing size and path limits."""
 
@@ -66,6 +72,7 @@ def _read_request_with_validation(
             "Client too slow to send request",
             "request_timeout",
             request_timeout_response(SECURITY_HEADERS),
+            error_format,
         )
     except RequestEntityTooLarge:
         WORKER_LOGGER.warning(
@@ -76,7 +83,14 @@ def _read_request_with_validation(
                 "limit": max_body_bytes,
             },
         )
-        send_response(client_socket, entity_too_large_response(SECURITY_HEADERS))
+        send_response(
+            client_socket,
+            apply_error_format(
+                entity_too_large_response(SECURITY_HEADERS),
+                error_format,
+                get_correlation_id(),
+            ),
+        )
         return None, b"", True
     except ForbiddenPath:
         return _reject(
@@ -85,6 +99,7 @@ def _read_request_with_validation(
             "Forbidden path access attempt",
             "forbidden_path",
             forbidden_response(None, None, SECURITY_HEADERS),
+            error_format,
         )
     except ValueError:
         return _reject(
@@ -93,6 +108,7 @@ def _read_request_with_validation(
             "Malformed request received",
             "malformed_request",
             bad_request_response(None, None, SECURITY_HEADERS),
+            error_format,
         )
 
     if request is None:

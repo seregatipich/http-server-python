@@ -14,3 +14,4 @@ class RequestContext:
     start_ns: int
     rate_decision: Optional[RateLimitDecision] = None
     principal: Optional[str] = None
+    error_format: str = "text"

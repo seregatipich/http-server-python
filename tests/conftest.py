@@ -176,6 +176,21 @@ def _jwt_server_process(
     yield from _launch_server(host, port, directory, auth_args, log_file=log_file)
 
 
+@pytest.fixture(name="json_error_server_process")
+def _json_error_server_process(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch the server with JSON-formatted error bodies enabled."""
+
+    host = "127.0.0.1"
+    port = reserve_port(host)
+    directory = tmp_path_factory.mktemp("server-files-json-errors")
+    log_file = directory / "server.log"
+    yield from _launch_server(
+        host, port, directory, ["--error-format", "json"], log_file=log_file
+    )
+
+
 @pytest.fixture()
 def file_storage(tmp_path: Path) -> Path:
     """Provide a temporary directory for file persistence tests."""
