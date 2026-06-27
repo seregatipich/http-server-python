@@ -42,6 +42,7 @@ from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
 from pyhttpd.domain.metrics import HISTOGRAM_BUCKETS_SECONDS, MetricsSink
 from pyhttpd.domain.ports import (
     Authenticator,
+    Channel,
     Clock,
     DrainingState,
     IdGenerator,
@@ -72,6 +73,7 @@ __all__ = [
     "AuthConfig",
     "Authenticator",
     "ByteRange",
+    "Channel",
     "CorsConfig",
     "BadRequest",
     "Clock",
