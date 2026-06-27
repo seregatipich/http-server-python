@@ -45,6 +45,8 @@ def _build_tls_context(args: argparse.Namespace) -> ssl.SSLContext:
 def _server_context(cert: str, key: str, args: argparse.Namespace) -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(cert, key)
+    if getattr(args, "enable_http2", False):
+        context.set_alpn_protocols(["h2", "http/1.1"])
     client_ca = getattr(args, "tls_client_ca", None)
     if client_ca:
         context.load_verify_locations(client_ca)

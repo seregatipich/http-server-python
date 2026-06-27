@@ -251,6 +251,7 @@ def _create_worker_context(
         session_policy=_create_session_policy(args),
         enable_sse=args.enable_sse,
         enable_websocket=args.enable_websocket,
+        enable_http2=args.enable_http2,
         proxy_targets=_create_proxy_targets(args),
         proxy_timeout=args.proxy_timeout,
         vhost_directories=_create_vhost_directories(args),

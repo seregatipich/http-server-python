@@ -5,6 +5,7 @@ import threading
 import time
 
 from pyhttpd.adapters.auth.client_cert import principal_from_peercert
+from pyhttpd.adapters.http2 import Http2Connection
 from pyhttpd.adapters.logging.correlation_adapter import (
     clear_correlation_id,
     generate_correlation_id,
@@ -34,6 +35,7 @@ from pyhttpd.adapters.transport.worker_logging import (
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.rendering import ErrorMapper
 from pyhttpd.domain import HttpError, HttpRequest, HttpResponse
+from pyhttpd.domain.http2.frames import CONNECTION_PREFACE
 
 __all__ = ["handle_client", "_recv_with_deadline"]
 
@@ -111,6 +113,44 @@ def _perform_upgrade(client_socket: socket.socket, response: HttpResponse) -> bo
     return True
 
 
+def _negotiate_protocol(
+    client_socket: socket.socket, context: WorkerContext
+) -> tuple[str, bytes]:
+    """Return ("h2", seed) for HTTP/2 or ("http1", seed) otherwise."""
+    if not context.enable_http2:
+        return "http1", b""
+    selected = getattr(client_socket, "selected_alpn_protocol", lambda: None)()
+    if selected == "h2":
+        return "h2", b""
+    if selected is not None:
+        return "http1", b""
+    if context.config is not None:
+        client_socket.settimeout(context.config.socket_timeout)
+    seed = client_socket.recv(len(CONNECTION_PREFACE))
+    return ("h2" if seed.startswith(b"PRI ") else "http1"), seed
+
+
+def _run_http2(
+    client_socket: socket.socket,
+    seed: bytes,
+    context: WorkerContext,
+    client_ip: str,
+    max_body_bytes: int,
+) -> None:
+    chain = build_worker_chain(context, client_ip, max_body_bytes)
+
+    def make_context() -> RequestContext:
+        set_correlation_id(generate_correlation_id())
+        return RequestContext(
+            correlation_id=get_correlation_id(),
+            start_ns=time.monotonic_ns(),
+            error_format=context.error_format,
+            client_principal=_client_certificate_principal(client_socket, context),
+        )
+
+    Http2Connection(SocketChannel(client_socket), chain, make_context).serve(seed)
+
+
 def _process_client_requests(
     client_socket: socket.socket,
     client_address: tuple[str, int],
@@ -119,8 +159,9 @@ def _process_client_requests(
     client_ip: str,
     client_addr_str: str,
     max_body_bytes: int,
+    initial_buffer: bytes = b"",
 ) -> None:
-    buffer = b""
+    buffer = initial_buffer
     while True:
         correlation_id = generate_correlation_id()
         set_correlation_id(correlation_id)
@@ -197,15 +238,20 @@ def handle_client(
     )
 
     try:
-        _process_client_requests(
-            client_socket,
-            client_address,
-            context,
-            lifecycle,
-            client_ip,
-            client_addr_str,
-            max_body_bytes,
-        )
+        protocol, seed = _negotiate_protocol(client_socket, context)
+        if protocol == "h2":
+            _run_http2(client_socket, seed, context, client_ip, max_body_bytes)
+        else:
+            _process_client_requests(
+                client_socket,
+                client_address,
+                context,
+                lifecycle,
+                client_ip,
+                client_addr_str,
+                max_body_bytes,
+                seed,
+            )
     except (
         ConnectionError,
         TimeoutError,
