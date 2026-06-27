@@ -43,7 +43,7 @@ pyhttpd [--directory <path>] [--host <host>] [--port <port>] \
   [--rate-limit <int>] [--rate-window-ms <int>] [--burst-capacity <int>] \
   [--rate-limit-dry-run] \
   [--socket-timeout <seconds>] [--shutdown-grace-seconds <seconds>] \
-  [--auth-mode <none|api-key|jwt>] [--auth-credentials <list>] [--auth-roles <list>] \
+  [--auth-mode <none|api-key|basic|jwt>] [--auth-credentials <list>] [--auth-roles <list>] \
   [--jwt-secret <secret>] [--jwt-issuer <iss>] [--jwt-audience <aud>]
 ```
 
@@ -63,7 +63,7 @@ pyhttpd [--directory <path>] [--host <host>] [--port <port>] \
 - `--socket-timeout` / `HTTP_SERVER_SOCKET_TIMEOUT`: socket timeout in seconds for request processing (default 60).
 - `--shutdown-grace-seconds` / `HTTP_SERVER_SHUTDOWN_GRACE_SECONDS`: grace period in seconds for graceful shutdown (default 30).
 
-- `--auth-mode` / `HTTP_SERVER_AUTH_MODE`: `none` (default), `api-key`, or `jwt`.
+- `--auth-mode` / `HTTP_SERVER_AUTH_MODE`: `none` (default), `api-key`, `basic`, or `jwt`.
 - `--auth-credentials` / `HTTP_SERVER_AUTH_CREDENTIALS`: comma-separated `identity:sha256hex` api-key pairs (store the SHA-256 hex of each key, never the raw key).
 - `--auth-roles` / `HTTP_SERVER_AUTH_ROLES`: comma-separated `identity:scope|scope` role assignments.
 - `--jwt-secret` / `HTTP_SERVER_JWT_SECRET`: shared secret for HS256 verification.
@@ -84,6 +84,10 @@ middleware runs after request validation and enforces scope-based access:
 
 - **api-key** — clients send `Authorization: ApiKey <key>`. Keys are matched by
   constant-time comparison of their SHA-256 hash, so only hashes live in config.
+- **basic** — clients send `Authorization: Basic base64(user:pass)`. The password's
+  SHA-256 hash is compared in constant time (only hashes live in config), and the
+  challenge is `Basic realm="pyhttpd"`. Basic transmits the password reversibly on
+  every request, so deploy it only behind TLS.
 - **jwt** — clients send `Authorization: Bearer <token>`. Tokens are verified as
   HS256 (hand-rolled on the standard library, zero dependencies): the algorithm
   is pinned to `HS256` (no `alg=none`), the signature is checked with
