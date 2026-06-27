@@ -256,6 +256,25 @@ connection open. Each subscriber pins a worker thread for the stream's lifetime,
 so the connection cap bounds concurrent subscribers. The endpoint is off by
 default, so `/events` returns 404 unless explicitly enabled.
 
+## WebSocket
+
+Pass `--enable-websocket` (or `HTTP_SERVER_ENABLE_WEBSOCKET=true`) to expose a
+hand-rolled RFC 6455 echo endpoint at `/ws` (zero dependencies — the handshake
+and frame codec are built on `hashlib`, `base64`, and `struct`):
+
+```bash
+pyhttpd --enable-websocket
+# then connect with any WebSocket client to ws://localhost:4221/ws
+```
+
+The server validates the `Upgrade`/`Connection`/`Sec-WebSocket-Version: 13`
+handshake, replies with the `Sec-WebSocket-Accept` digest, then echoes text and
+binary messages, answers pings with pongs, reassembles fragmented messages, and
+performs the closing handshake. Client frames must be masked and text is
+UTF-8-validated (a violation closes with the appropriate status code); a
+graceful shutdown closes open sockets with `1001 Going Away`. The endpoint is
+off by default, so `/ws` returns 404 unless enabled.
+
 ## API documentation
 
 The full endpoint surface — methods, status codes, conditional/range behavior,
