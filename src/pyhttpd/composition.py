@@ -34,6 +34,7 @@ from pyhttpd.domain import (
     PhaseTimeouts,
     TokenBucketSettings,
 )
+from pyhttpd.domain.proxy import ProxyTarget, parse_proxy_pass
 
 MAIN_LOGGER = logging.getLogger("http_server.main")
 
@@ -148,6 +149,27 @@ def _create_session_policy(
     )
 
 
+def _create_proxy_targets(args: argparse.Namespace) -> tuple[ProxyTarget, ...]:
+    """Parse --proxy-pass specs, enforcing the upstream-host allowlist."""
+    specs = args.proxy_pass or []
+    if not specs:
+        return ()
+    allowlist = set(args.proxy_allow_host or [])
+    targets = []
+    for spec in specs:
+        try:
+            target = parse_proxy_pass(spec)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        if target.host not in allowlist:
+            raise SystemExit(
+                f"proxy upstream host not allowlisted: {target.host} "
+                f"(add --proxy-allow-host {target.host})"
+            )
+        targets.append(target)
+    return tuple(targets)
+
+
 def _create_phase_timeouts(args: argparse.Namespace) -> PhaseTimeouts:
     """Create per-phase request timeouts from CLI arguments."""
     return PhaseTimeouts(
@@ -182,6 +204,8 @@ def _create_worker_context(
         session_policy=_create_session_policy(args),
         enable_sse=args.enable_sse,
         enable_websocket=args.enable_websocket,
+        proxy_targets=_create_proxy_targets(args),
+        proxy_timeout=args.proxy_timeout,
     )
 
 

@@ -109,3 +109,17 @@ class InternalServerError(HttpError):
 
     status = 500
     reason = "Internal Server Error"
+
+
+class BadGateway(HttpError):
+    """Raised when an upstream returns an invalid response or is unreachable."""
+
+    status = 502
+    reason = "Bad Gateway"
+
+
+class GatewayTimeout(HttpError):
+    """Raised when an upstream does not respond within the deadline."""
+
+    status = 504
+    reason = "Gateway Timeout"

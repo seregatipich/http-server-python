@@ -275,6 +275,25 @@ UTF-8-validated (a violation closes with the appropriate status code); a
 graceful shutdown closes open sockets with `1001 Going Away`. The endpoint is
 off by default, so `/ws` returns 404 unless enabled.
 
+## Reverse proxy
+
+Mount an upstream with `--proxy-pass MOUNT=URL`; every request under `MOUNT` is
+forwarded (via stdlib `http.client`) and the upstream response streamed back. An
+explicit SSRF allowlist is required — a `--proxy-pass` whose host is not in
+`--proxy-allow-host` aborts startup:
+
+```bash
+pyhttpd --proxy-pass /api/=http://127.0.0.1:9000 --proxy-allow-host 127.0.0.1
+curl localhost:4221/api/users        # served by the upstream on :9000
+```
+
+Hop-by-hop headers (RFC 7230 §6.1) are stripped in both directions, the `Host`
+header is rewritten to the upstream, and `Via` / `X-Forwarded-For` /
+`X-Forwarded-Proto` are added. A known `Content-Length` is preserved; otherwise
+the body is re-framed as chunked. An unreachable upstream returns `502`, a slow
+one `504` (deadline via `--proxy-timeout`). Paths outside every mount are served
+locally as usual.
+
 ## API documentation
 
 The full endpoint surface — methods, status codes, conditional/range behavior,

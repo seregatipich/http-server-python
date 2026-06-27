@@ -11,9 +11,11 @@ from pyhttpd.domain.config import (
     FileServingOptions,
 )
 from pyhttpd.domain.errors import (
+    BadGateway,
     BadRequest,
     Forbidden,
     ForbiddenPath,
+    GatewayTimeout,
     HttpError,
     InternalServerError,
     MethodNotAllowed,
@@ -72,8 +74,10 @@ __all__ = [
     "SECURITY_HEADERS",
     "AuthConfig",
     "Authenticator",
+    "BadGateway",
     "ByteRange",
     "Channel",
+    "GatewayTimeout",
     "CorsConfig",
     "BadRequest",
     "Clock",

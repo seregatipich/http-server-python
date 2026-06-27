@@ -10,6 +10,7 @@ from pyhttpd.adapters.logging.correlation_adapter import (
     get_correlation_id,
     set_correlation_id,
 )
+from pyhttpd.adapters.proxy import forward
 from pyhttpd.adapters.transport.channel import SocketChannel
 from pyhttpd.adapters.transport.context import WorkerContext
 from pyhttpd.adapters.transport.io import send_response
@@ -31,6 +32,7 @@ from pyhttpd.adapters.transport.worker_logging import (
     log_worker_error,
 )
 from pyhttpd.application.context import RequestContext
+from pyhttpd.application.handlers.proxy import make_proxy_dispatch
 from pyhttpd.application.middleware.assembly import build_request_chain
 from pyhttpd.application.middleware.session import make_session_middleware
 from pyhttpd.application.pipeline import Handler
@@ -55,8 +57,9 @@ def _build_request_chain(
         context.enable_sse,
         context.enable_websocket,
     )
+    dispatch = _wrap_with_proxy(router.dispatch, context, client_ip)
     chain = build_request_chain(
-        router.dispatch,
+        dispatch,
         cors_config=context.cors_config,
         metrics_sink=context.metrics_sink,
         rate_limiter=context.rate_limiter,
@@ -66,6 +69,21 @@ def _build_request_chain(
         max_body_bytes=max_body_bytes,
     )
     return _wrap_with_session(chain, context)
+
+
+def _wrap_with_proxy(
+    dispatch: Handler, context: WorkerContext, client_ip: str
+) -> Handler:
+    if not context.proxy_targets:
+        return dispatch
+    return make_proxy_dispatch(
+        context.proxy_targets,
+        forward,
+        client_ip,
+        context.proxy_timeout,
+        WORKER_PORT_LOGGER,
+        dispatch,
+    )
 
 
 def _wrap_with_session(chain: Handler, context: WorkerContext) -> Handler:
