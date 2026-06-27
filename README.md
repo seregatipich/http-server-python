@@ -316,6 +316,19 @@ the body is re-framed as chunked. An unreachable upstream returns `502`, a slow
 one `504` (deadline via `--proxy-timeout`). Paths outside every mount are served
 locally as usual.
 
+## Access logs
+
+Pass `--access-log <stdout|PATH>` (or `HTTP_SERVER_ACCESS_LOG`) to emit one
+apache-style Combined Log Format line per response on a dedicated logger,
+separate from the structured JSON application log:
+
+```bash
+pyhttpd --access-log stdout
+# 127.0.0.1 - - [27/Jun/2026:12:00:00 +0000] "GET /echo/hi HTTP/1.1" 200 2 "-" "curl/8"
+```
+
+Off by default. Long-lived upgraded connections (WebSocket) are not access-logged.
+
 ## API documentation
 
 The full endpoint surface — methods, status codes, conditional/range behavior,
