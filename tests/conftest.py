@@ -216,6 +216,42 @@ def _json_error_server_process(
     )
 
 
+@pytest.fixture(name="proxy_pair")
+def _proxy_pair(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[dict, None, None]:
+    """Launch an upstream server and a reverse proxy pointing /up/ at it."""
+
+    host = "127.0.0.1"
+    upstream_port = reserve_port(host)
+    upstream_dir = tmp_path_factory.mktemp("proxy-upstream")
+    upstream_gen = _launch_server(
+        host, upstream_port, upstream_dir, log_file=upstream_dir / "upstream.log"
+    )
+    upstream = next(upstream_gen)
+
+    proxy_port = reserve_port(host)
+    proxy_dir = tmp_path_factory.mktemp("proxy-front")
+    proxy_args = [
+        "--proxy-pass",
+        f"/up/=http://{host}:{upstream_port}",
+        "--proxy-allow-host",
+        host,
+    ]
+    proxy_gen = _launch_server(
+        host, proxy_port, proxy_dir, proxy_args, log_file=proxy_dir / "proxy.log"
+    )
+    proxy = next(proxy_gen)
+    try:
+        yield {"proxy": proxy, "upstream": upstream}
+    finally:
+        for generator in (proxy_gen, upstream_gen):
+            try:
+                next(generator)
+            except StopIteration:
+                pass
+
+
 @pytest.fixture(name="websocket_server_process")
 def _websocket_server_process(
     tmp_path_factory: "TempPathFactory",
