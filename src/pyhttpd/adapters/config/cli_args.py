@@ -51,6 +51,7 @@ DEFAULT_FILE_CACHE_CONTROL = _env_str("HTTP_SERVER_FILE_CACHE_CONTROL", "")
 DEFAULT_FILE_GZIP = _env_bool("HTTP_SERVER_FILE_GZIP", False)
 DEFAULT_FILE_GZIP_MIN_BYTES = _env_int("HTTP_SERVER_FILE_GZIP_MIN_BYTES", 1024)
 DEFAULT_CONTENT_SNIFFING = _env_bool("HTTP_SERVER_CONTENT_SNIFFING", False)
+DEFAULT_AUTOINDEX = _env_bool("HTTP_SERVER_AUTOINDEX", False)
 DEFAULT_ERROR_FORMAT = _env_str("HTTP_SERVER_ERROR_FORMAT", "text")
 DEFAULT_ALLOW_CHUNKED_REQUESTS = _env_bool("HTTP_SERVER_ALLOW_CHUNKED_REQUESTS", False)
 DEFAULT_EXPECT_CONTINUE = _env_bool("HTTP_SERVER_EXPECT_CONTINUE", False)
@@ -361,6 +362,12 @@ def _add_file_serving_args(parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=DEFAULT_CONTENT_SNIFFING,
         help="Sniff content type from magic bytes when the extension is unknown",
+    )
+    parser.add_argument(
+        "--autoindex",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_AUTOINDEX,
+        help="Serve an HTML listing when a /files/ path resolves to a directory",
     )
 
 

@@ -275,6 +275,14 @@ UTF-8-validated (a violation closes with the appropriate status code); a
 graceful shutdown closes open sockets with `1001 Going Away`. The endpoint is
 off by default, so `/ws` returns 404 unless enabled.
 
+## Directory autoindex
+
+Pass `--autoindex` (or `HTTP_SERVER_AUTOINDEX=true`) to serve an HTML listing
+when a `/files/*` GET resolves to a directory (otherwise such a request is a
+404). Entry names are HTML-escaped and links URL-quoted to prevent stored XSS,
+and the listing never escapes the sandbox. Off by default, so directory requests
+keep returning 404 unless enabled.
+
 ## Virtual hosts
 
 Serve multiple sites from one process with `--vhost HOST=DIR` (repeatable). The

@@ -9,6 +9,7 @@ from typing import Callable, Iterator, Optional
 
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.cors_headers import apply_cors_headers
+from pyhttpd.application.handlers.autoindex import render_autoindex
 from pyhttpd.application.rendering import accepts_gzip, empty_response
 from pyhttpd.domain import (
     FILES_ENDPOINT_PREFIX,
@@ -214,6 +215,12 @@ def _get_file_response(
     cors_config: Optional[CorsConfig],
     options: FileServingOptions,
 ) -> HttpResponse:
+    if resolved_path.is_dir():
+        if options.autoindex:
+            logger.log(logging.INFO, "autoindex", path=resolved_path.as_posix())
+            return render_autoindex(request, resolved_path, cors_config)
+        logger.log(logging.INFO, "file_not_found", path=resolved_path.as_posix())
+        raise NotFound("file not found")
     if not (resolved_path.exists() and resolved_path.is_file()):
         logger.log(logging.INFO, "file_not_found", path=resolved_path.as_posix())
         raise NotFound("file not found")

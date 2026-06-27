@@ -123,6 +123,7 @@ def _create_file_options(args: argparse.Namespace) -> FileServingOptions:
         gzip=args.file_gzip,
         gzip_min_bytes=args.file_gzip_min_bytes,
         content_sniffing=args.content_sniffing,
+        autoindex=args.autoindex,
     )
 
 
