@@ -275,6 +275,47 @@ UTF-8-validated (a violation closes with the appropriate status code); a
 graceful shutdown closes open sockets with `1001 Going Away`. The endpoint is
 off by default, so `/ws` returns 404 unless enabled.
 
+## Directory autoindex
+
+Pass `--autoindex` (or `HTTP_SERVER_AUTOINDEX=true`) to serve an HTML listing
+when a `/files/*` GET resolves to a directory (otherwise such a request is a
+404). Entry names are HTML-escaped and links URL-quoted to prevent stored XSS,
+and the listing never escapes the sandbox. Off by default, so directory requests
+keep returning 404 unless enabled.
+
+## TLS: SNI and mutual TLS
+
+Beyond the basic `--cert`/`--key` termination, the server supports SNI multi-cert
+and mutual TLS (all via the stdlib `ssl` module):
+
+```bash
+pyhttpd --cert default.crt --key default.key \
+  --tls-sni a.example:a.crt:a.key --tls-sni b.example:b.crt:b.key \
+  --tls-client-ca ca.crt --tls-require-client-cert \
+  --auth-mode client-cert --auth-roles "writer:files:read|files:write"
+```
+
+`--tls-sni HOST:CERT:KEY` (repeatable) serves a per-host certificate selected by
+the TLS SNI extension, falling back to the default cert. `--tls-client-ca` plus
+`--tls-require-client-cert` enable mutual TLS: clients without a CA-signed
+certificate are rejected at the handshake. With `--auth-mode client-cert`, the
+verified certificate's Common Name (or DNS SAN) becomes the principal identity
+and is mapped to scopes via `--auth-roles`, so RBAC applies to cert identities.
+
+## Virtual hosts
+
+Serve multiple sites from one process with `--vhost HOST=DIR` (repeatable). The
+request's `Host` header (lowercased, port stripped) selects the directory root;
+an unmatched Host falls back to `--directory`:
+
+```bash
+pyhttpd --vhost a.example=/srv/a --vhost b.example=/srv/b --directory /srv/default
+```
+
+Each host gets its own sandboxed file root, so `/files/*` on `a.example` cannot
+reach `b.example`'s tree. With no `--vhost` flags the server behaves exactly as
+before (single root).
+
 ## Reverse proxy
 
 Mount an upstream with `--proxy-pass MOUNT=URL`; every request under `MOUNT` is
@@ -293,6 +334,38 @@ header is rewritten to the upstream, and `Via` / `X-Forwarded-For` /
 the body is re-framed as chunked. An unreachable upstream returns `502`, a slow
 one `504` (deadline via `--proxy-timeout`). Paths outside every mount are served
 locally as usual.
+
+## Config file and live reload
+
+Pass `--config server.toml` to load settings from a TOML file (parsed with the
+stdlib `tomllib`). Keys match the long-flag names (`error_format`,
+`max_connections`, …); precedence is **CLI flag > file > environment**:
+
+```toml
+# server.toml
+error_format = "json"
+max_connections = 100
+autoindex = true
+```
+
+On `SIGHUP` the file is re-read and a curated set of reloadable fields is
+swapped atomically on the running server — error format, CORS, file-serving
+options, rate limits, and request-framing toggles — without dropping
+connections. The bind host/port and TLS socket are fixed for the process
+lifetime and are not reloaded.
+
+## Access logs
+
+Pass `--access-log <stdout|PATH>` (or `HTTP_SERVER_ACCESS_LOG`) to emit one
+apache-style Combined Log Format line per response on a dedicated logger,
+separate from the structured JSON application log:
+
+```bash
+pyhttpd --access-log stdout
+# 127.0.0.1 - - [27/Jun/2026:12:00:00 +0000] "GET /echo/hi HTTP/1.1" 200 2 "-" "curl/8"
+```
+
+Off by default. Long-lived upgraded connections (WebSocket) are not access-logged.
 
 ## API documentation
 

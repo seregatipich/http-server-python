@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 
 from pyhttpd.adapters.config.env import _env_bool, _env_int, _env_list, _env_str
+from pyhttpd.adapters.config.file_config import apply_overlay, load_config_file
 from pyhttpd.domain import DEFAULT_AUTH_MODE, DEFAULT_MAX_BODY_BYTES
 
 MAX_BODY_BYTES = _env_int("HTTP_SERVER_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)
@@ -44,6 +45,7 @@ DEFAULT_JWT_SECRET = _env_str("HTTP_SERVER_JWT_SECRET", "")
 DEFAULT_JWT_ISSUER = _env_str("HTTP_SERVER_JWT_ISSUER", "")
 DEFAULT_JWT_AUDIENCE = _env_str("HTTP_SERVER_JWT_AUDIENCE", "")
 DEFAULT_METRICS_ENABLED = _env_bool("HTTP_SERVER_METRICS", False)
+DEFAULT_ACCESS_LOG = _env_str("HTTP_SERVER_ACCESS_LOG", "off")
 DEFAULT_ENABLE_SSE = _env_bool("HTTP_SERVER_ENABLE_SSE", False)
 DEFAULT_ENABLE_WEBSOCKET = _env_bool("HTTP_SERVER_ENABLE_WEBSOCKET", False)
 DEFAULT_PROXY_TIMEOUT = float(_env_int("HTTP_SERVER_PROXY_TIMEOUT", 30))
@@ -51,6 +53,7 @@ DEFAULT_FILE_CACHE_CONTROL = _env_str("HTTP_SERVER_FILE_CACHE_CONTROL", "")
 DEFAULT_FILE_GZIP = _env_bool("HTTP_SERVER_FILE_GZIP", False)
 DEFAULT_FILE_GZIP_MIN_BYTES = _env_int("HTTP_SERVER_FILE_GZIP_MIN_BYTES", 1024)
 DEFAULT_CONTENT_SNIFFING = _env_bool("HTTP_SERVER_CONTENT_SNIFFING", False)
+DEFAULT_AUTOINDEX = _env_bool("HTTP_SERVER_AUTOINDEX", False)
 DEFAULT_ERROR_FORMAT = _env_str("HTTP_SERVER_ERROR_FORMAT", "text")
 DEFAULT_ALLOW_CHUNKED_REQUESTS = _env_bool("HTTP_SERVER_ALLOW_CHUNKED_REQUESTS", False)
 DEFAULT_EXPECT_CONTINUE = _env_bool("HTTP_SERVER_EXPECT_CONTINUE", False)
@@ -200,7 +203,7 @@ def _add_auth_args(parser: argparse.ArgumentParser) -> None:
     """Add authentication and authorization arguments."""
     parser.add_argument(
         "--auth-mode",
-        choices=["none", "api-key", "basic", "jwt"],
+        choices=["none", "api-key", "basic", "jwt", "client-cert"],
         default=DEFAULT_AUTH_MODE,
         help="Authentication mode (default: none)",
     )
@@ -238,6 +241,12 @@ def _add_observability_args(parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=DEFAULT_METRICS_ENABLED,
         help="Expose a Prometheus /metrics endpoint",
+    )
+    parser.add_argument(
+        "--access-log",
+        default=DEFAULT_ACCESS_LOG,
+        metavar="off|stdout|PATH",
+        help="Combined Log Format access log destination (default: off)",
     )
     parser.add_argument(
         "--error-format",
@@ -283,6 +292,17 @@ def _add_session_args(parser: argparse.ArgumentParser) -> None:
         choices=["Strict", "Lax", "None"],
         default=DEFAULT_SESSION_COOKIE_SAMESITE,
         help="SameSite attribute for the session cookie",
+    )
+
+
+def _add_vhost_args(parser: argparse.ArgumentParser) -> None:
+    """Add virtual-host routing arguments."""
+    parser.add_argument(
+        "--vhost",
+        action="append",
+        default=None,
+        metavar="HOST=DIR",
+        help="Serve a Host from its own directory root (repeatable)",
     )
 
 
@@ -351,16 +371,43 @@ def _add_file_serving_args(parser: argparse.ArgumentParser) -> None:
         default=DEFAULT_CONTENT_SNIFFING,
         help="Sniff content type from magic bytes when the extension is unknown",
     )
+    parser.add_argument(
+        "--autoindex",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_AUTOINDEX,
+        help="Serve an HTML listing when a /files/ path resolves to a directory",
+    )
 
 
 def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     """Return parsed CLI arguments for server configuration."""
     parser = argparse.ArgumentParser(description="HTTP server configuration")
+    parser.add_argument(
+        "--config", default=None, help="Path to a TOML config file (CLI flags win)"
+    )
     parser.add_argument("--directory", default=".")
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=4221)
     parser.add_argument("--cert", help="Path to TLS certificate file")
     parser.add_argument("--key", help="Path to TLS private key file")
+    parser.add_argument(
+        "--tls-sni",
+        action="append",
+        default=None,
+        metavar="HOST:CERT:KEY",
+        help="Serve a per-SNI-host certificate (repeatable)",
+    )
+    parser.add_argument(
+        "--tls-client-ca",
+        default=None,
+        help="CA bundle used to verify mutual-TLS client certificates",
+    )
+    parser.add_argument(
+        "--tls-require-client-cert",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Require a valid client certificate (mutual TLS)",
+    )
     _add_logging_args(parser)
     _add_connection_limit_args(parser)
     _add_timeout_args(parser)
@@ -369,6 +416,10 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     _add_observability_args(parser)
     _add_request_framing_args(parser)
     _add_session_args(parser)
+    _add_vhost_args(parser)
     _add_proxy_args(parser)
     _add_file_serving_args(parser)
-    return parser.parse_args(argv)
+    namespace = parser.parse_args(argv)
+    if namespace.config:
+        apply_overlay(namespace, load_config_file(namespace.config), argv)
+    return namespace

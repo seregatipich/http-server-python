@@ -5,9 +5,9 @@ from argparse import Namespace
 import pytest
 
 from pyhttpd.application.handlers.proxy import make_proxy_dispatch
-from pyhttpd.composition import _create_proxy_targets
 from pyhttpd.domain import BadGateway, HttpResponse
 from pyhttpd.domain.proxy import UpstreamResponse, parse_proxy_pass
+from pyhttpd.wiring import _create_proxy_targets
 from tests.unit._helpers import RecordingLogger, make_context, make_request
 
 TARGETS = (parse_proxy_pass("/api/=http://backend:80"),)

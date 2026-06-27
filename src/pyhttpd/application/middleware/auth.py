@@ -28,7 +28,7 @@ def make_auth_middleware(authenticator: Authenticator, logger: Logger) -> Middle
         if request.path in _PUBLIC_PATHS or is_preflight_request(request):
             return nxt(request, ctx)
 
-        principal = authenticator.authenticate(request.headers)
+        principal = ctx.client_principal or authenticator.authenticate(request.headers)
         if principal is None:
             logger.log(
                 logging.WARNING,

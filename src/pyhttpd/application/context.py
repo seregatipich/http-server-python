@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from pyhttpd.domain import RateLimitDecision
+from pyhttpd.domain import Principal, RateLimitDecision
 
 
 @dataclass
@@ -16,3 +16,4 @@ class RequestContext:
     principal: Optional[str] = None
     error_format: str = "text"
     session: Optional[Dict[str, object]] = None
+    client_principal: Optional[Principal] = None
