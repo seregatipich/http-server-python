@@ -54,6 +54,33 @@ class Router:
         raise NotFound("no matching route")
 
 
+Dispatch = Callable[[HttpRequest, RequestContext], HttpResponse]
+
+
+def normalize_host(host: str) -> str:
+    """Lowercase a Host header and strip any port for vhost matching."""
+    return host.split(":", 1)[0].strip().lower()
+
+
+def make_vhost_router(
+    host_directories: dict[str, str],
+    default_directory: str,
+    build_router: Callable[[str], Router],
+) -> Dispatch:
+    """Dispatch to a per-host router by Host header, falling back to default."""
+    routers = {
+        normalize_host(host): build_router(directory)
+        for host, directory in host_directories.items()
+    }
+    default_router = build_router(default_directory)
+
+    def dispatch(request: HttpRequest, ctx: RequestContext) -> HttpResponse:
+        host = normalize_host(request.headers.get("host", ""))
+        return routers.get(host, default_router).dispatch(request, ctx)
+
+    return dispatch
+
+
 def make_default_router(
     directory: str,
     draining_state: Optional[DrainingState],

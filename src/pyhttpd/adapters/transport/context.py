@@ -27,3 +27,4 @@ class WorkerContext:  # pylint: disable=too-many-instance-attributes
     enable_websocket: bool = False
     proxy_targets: tuple = ()
     proxy_timeout: float = 30.0
+    vhost_directories: Optional[dict] = None

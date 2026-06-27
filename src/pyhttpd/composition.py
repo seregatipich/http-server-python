@@ -149,6 +149,20 @@ def _create_session_policy(
     )
 
 
+def _create_vhost_directories(args: argparse.Namespace) -> Optional[dict[str, str]]:
+    """Parse --vhost host=dir specs into a host-to-directory mapping."""
+    specs = args.vhost or []
+    if not specs:
+        return None
+    mapping: dict[str, str] = {}
+    for spec in specs:
+        host, separator, directory = spec.partition("=")
+        if not separator or not host.strip() or not directory.strip():
+            raise SystemExit(f"invalid --vhost spec: {spec!r}")
+        mapping[host.strip()] = directory.strip()
+    return mapping
+
+
 def _create_proxy_targets(args: argparse.Namespace) -> tuple[ProxyTarget, ...]:
     """Parse --proxy-pass specs, enforcing the upstream-host allowlist."""
     specs = args.proxy_pass or []
@@ -206,6 +220,7 @@ def _create_worker_context(
         enable_websocket=args.enable_websocket,
         proxy_targets=_create_proxy_targets(args),
         proxy_timeout=args.proxy_timeout,
+        vhost_directories=_create_vhost_directories(args),
     )
 
 
