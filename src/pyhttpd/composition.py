@@ -145,6 +145,8 @@ def _create_worker_context(
         file_options=_create_file_options(args),
         phase_timeouts=_create_phase_timeouts(args),
         error_format=args.error_format,
+        allow_chunked_requests=args.allow_chunked_requests,
+        expect_continue=args.expect_continue,
     )
 
 

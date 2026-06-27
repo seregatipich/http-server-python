@@ -4,13 +4,15 @@ import logging
 import socket
 import time
 import urllib.parse
-from typing import Optional, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 from pyhttpd.adapters.logging.correlation_adapter import (
     CorrelationLoggerAdapter,
     get_correlation_id,
     set_correlation_id,
 )
+from pyhttpd.adapters.transport.chunked_reader import read_chunked_body
+from pyhttpd.adapters.transport.deadline import _deadline_ns, _recv_with_deadline
 from pyhttpd.adapters.transport.wire import HEADER_DELIMITER
 from pyhttpd.domain import (
     DEFAULT_MAX_BODY_BYTES,
@@ -20,8 +22,9 @@ from pyhttpd.domain import (
     HttpResponse,
     PhaseTimeouts,
     RequestEntityTooLarge,
-    RequestTimeout,
 )
+
+_CONTINUE_RESPONSE = b"HTTP/1.1 100 Continue\r\n\r\n"
 
 IO_LOGGER = CorrelationLoggerAdapter(logging.getLogger("http_server.io"), {})
 
@@ -73,23 +76,46 @@ def _enforce_body_size(content_length: int, max_body_bytes: int) -> None:
         raise RequestEntityTooLarge
 
 
-def _reject_ambiguous_framing(header_lines: list[str], headers: dict[str, str]) -> None:
-    """Reject request framings that cannot be unambiguously interpreted.
+def _header_values(header_lines: list[str], name: str) -> list[str]:
+    return [
+        line.split(":", 1)[1].strip()
+        for line in header_lines
+        if ":" in line and line.split(":", 1)[0].strip().lower() == name
+    ]
+
+
+def _reject_ambiguous_framing(
+    header_lines: list[str],
+    allow_chunked: bool = False,
+) -> bool:
+    """Reject ambiguous request framing and report whether the body is chunked.
 
     The body is framed solely by Content-Length, so a Transfer-Encoding header
     (which an upstream proxy might honor instead) or conflicting Content-Length
     values would desynchronize framing -- a request-smuggling vector
-    (RFC 9112 section 6.3).
+    (RFC 9112 section 6.3). When chunked requests are explicitly enabled, a
+    single final ``chunked`` coding is accepted, but Transfer-Encoding combined
+    with Content-Length, duplicated, or stacked with other codings is still
+    rejected.
     """
-    if "transfer-encoding" in headers:
-        raise ValueError("Transfer-Encoding is not supported")
-    declared = {
-        line.split(":", 1)[1].strip()
-        for line in header_lines
-        if ":" in line and line.split(":", 1)[0].strip().lower() == "content-length"
-    }
-    if len(declared) > 1:
+    transfer_encodings = _header_values(header_lines, "transfer-encoding")
+    content_lengths = set(_header_values(header_lines, "content-length"))
+    if transfer_encodings:
+        if not allow_chunked:
+            raise ValueError("Transfer-Encoding is not supported")
+        if len(transfer_encodings) > 1:
+            raise ValueError("multiple Transfer-Encoding headers")
+        codings = [
+            c.strip().lower() for c in transfer_encodings[0].split(",") if c.strip()
+        ]
+        if codings != ["chunked"]:
+            raise ValueError("unsupported Transfer-Encoding coding")
+        if content_lengths:
+            raise ValueError("Transfer-Encoding combined with Content-Length")
+        return True
+    if len(content_lengths) > 1:
         raise ValueError("conflicting Content-Length headers")
+    return False
 
 
 def determine_content_length(
@@ -106,24 +132,6 @@ def determine_content_length(
     content_length = _parse_content_length(header_value)
     _enforce_body_size(content_length, max_body_bytes)
     return content_length
-
-
-def _recv_with_deadline(client_socket: socket.socket, deadline_ns: int) -> bytes:
-    """Receive data from socket with a deadline, raising RequestTimeout if exceeded."""
-    remaining_ns = deadline_ns - time.monotonic_ns()
-    if remaining_ns <= 0:
-        raise RequestTimeout("Request deadline exceeded")
-    client_socket.settimeout(remaining_ns / 1_000_000_000)
-    try:
-        return client_socket.recv(4096)
-    except (socket.timeout, TimeoutError) as exc:
-        raise RequestTimeout("Request deadline exceeded") from exc
-
-
-def _deadline_ns(seconds: Optional[float]) -> Optional[int]:
-    if seconds is None:
-        return None
-    return time.monotonic_ns() + int(seconds * 1_000_000_000)
 
 
 def _read_until_headers(
@@ -172,35 +180,92 @@ def _read_body(
     return remainder[:content_length], remainder[content_length:]
 
 
+def _wants_continue(headers: dict[str, str], expect_continue: bool) -> bool:
+    return (
+        expect_continue and headers.get("expect", "").strip().lower() == "100-continue"
+    )
+
+
+def _read_request_body(
+    client_socket: socket.socket,
+    remainder: bytes,
+    method: str,
+    headers: dict[str, str],
+    *,
+    is_chunked: bool,
+    max_body_bytes: int,
+    timeouts: Optional[PhaseTimeouts],
+    expect_continue: bool,
+) -> Tuple[Optional[bytes], bytes]:
+    if is_chunked:
+        if _wants_continue(headers, expect_continue):
+            client_socket.sendall(_CONTINUE_RESPONSE)
+        return read_chunked_body(client_socket, remainder, max_body_bytes, timeouts)
+    content_length = determine_content_length(method, headers, max_body_bytes)
+    if content_length > 0 and _wants_continue(headers, expect_continue):
+        client_socket.sendall(_CONTINUE_RESPONSE)
+    return _read_body(
+        client_socket, remainder, content_length, max_body_bytes, timeouts
+    )
+
+
+class _RequestHead(NamedTuple):
+    method: str
+    path: str
+    query: str
+    headers: dict[str, str]
+    is_chunked: bool
+    remainder: bytes
+
+
+def _parse_request_head(buffer: bytes, allow_chunked: bool) -> _RequestHead:
+    header_block, remainder = buffer.split(HEADER_DELIMITER, 1)
+    header_lines = header_block.decode().split("\r\n")
+    method, path, query = parse_request_line(header_lines[0])
+    headers = parse_headers(header_lines[1:])
+    is_chunked = _reject_ambiguous_framing(header_lines[1:], allow_chunked)
+    return _RequestHead(method, path, query, headers, is_chunked, remainder)
+
+
+def _propagate_correlation_id(headers: dict[str, str]) -> None:
+    incoming_correlation_id = headers.get("x-request-id")
+    if incoming_correlation_id:
+        set_correlation_id(incoming_correlation_id)
+
+
 def receive_request(
     client_socket: socket.socket,
     buffer: bytes,
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     timeouts: Optional[PhaseTimeouts] = None,
+    *,
+    allow_chunked: bool = False,
+    expect_continue: bool = False,
 ) -> Tuple[Optional[HttpRequest], bytes]:
     """Read bytes from the socket until a complete request is available."""
     buffer = _read_until_headers(client_socket, buffer, timeouts)
     if not buffer:
         return None, b""
 
-    header_block, remainder = buffer.split(HEADER_DELIMITER, 1)
-    header_lines = header_block.decode().split("\r\n")
-    method, path, query = parse_request_line(header_lines[0])
-    headers = parse_headers(header_lines[1:])
-    _reject_ambiguous_framing(header_lines[1:], headers)
-
-    incoming_correlation_id = headers.get("x-request-id")
-    if incoming_correlation_id:
-        set_correlation_id(incoming_correlation_id)
-
-    content_length = determine_content_length(method, headers, max_body_bytes)
-    body, leftover = _read_body(
-        client_socket, remainder, content_length, max_body_bytes, timeouts
+    head = _parse_request_head(buffer, allow_chunked)
+    _propagate_correlation_id(head.headers)
+    body, leftover = _read_request_body(
+        client_socket,
+        head.remainder,
+        head.method,
+        head.headers,
+        is_chunked=head.is_chunked,
+        max_body_bytes=max_body_bytes,
+        timeouts=timeouts,
+        expect_continue=expect_continue,
     )
     if body is None:
         return None, b""
-    IO_LOGGER.debug("Parsed request", extra={"method": method, "path": path})
-    return HttpRequest(method, path, headers, body, query), leftover
+    IO_LOGGER.debug("Parsed request", extra={"method": head.method, "path": head.path})
+    return (
+        HttpRequest(head.method, head.path, head.headers, body, head.query),
+        leftover,
+    )
 
 
 def _response_headers(response: HttpResponse) -> dict[str, str]:

@@ -49,6 +49,8 @@ DEFAULT_FILE_GZIP = _env_bool("HTTP_SERVER_FILE_GZIP", False)
 DEFAULT_FILE_GZIP_MIN_BYTES = _env_int("HTTP_SERVER_FILE_GZIP_MIN_BYTES", 1024)
 DEFAULT_CONTENT_SNIFFING = _env_bool("HTTP_SERVER_CONTENT_SNIFFING", False)
 DEFAULT_ERROR_FORMAT = _env_str("HTTP_SERVER_ERROR_FORMAT", "text")
+DEFAULT_ALLOW_CHUNKED_REQUESTS = _env_bool("HTTP_SERVER_ALLOW_CHUNKED_REQUESTS", False)
+DEFAULT_EXPECT_CONTINUE = _env_bool("HTTP_SERVER_EXPECT_CONTINUE", False)
 
 
 @dataclass
@@ -238,6 +240,22 @@ def _add_observability_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_request_framing_args(parser: argparse.ArgumentParser) -> None:
+    """Add opt-in request-body framing arguments."""
+    parser.add_argument(
+        "--allow-chunked-requests",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_ALLOW_CHUNKED_REQUESTS,
+        help="Decode Transfer-Encoding: chunked request bodies (default: off)",
+    )
+    parser.add_argument(
+        "--expect-continue",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_EXPECT_CONTINUE,
+        help="Honor Expect: 100-continue before reading request bodies",
+    )
+
+
 def _add_file_serving_args(parser: argparse.ArgumentParser) -> None:
     """Add static file serving arguments."""
     parser.add_argument(
@@ -279,5 +297,6 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     _add_cors_args(parser)
     _add_auth_args(parser)
     _add_observability_args(parser)
+    _add_request_framing_args(parser)
     _add_file_serving_args(parser)
     return parser.parse_args(argv)

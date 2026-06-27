@@ -132,6 +132,8 @@ def _process_client_requests(
                 max_body_bytes,
                 context.phase_timeouts,
                 context.error_format,
+                context.allow_chunked_requests,
+                context.expect_continue,
             )
             if should_terminate:
                 break

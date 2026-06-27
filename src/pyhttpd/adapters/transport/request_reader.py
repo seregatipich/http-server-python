@@ -58,12 +58,19 @@ def _read_request_with_validation(
     max_body_bytes: int,
     timeouts: Optional[PhaseTimeouts] = None,
     error_format: str = "text",
+    allow_chunked: bool = False,
+    expect_continue: bool = False,
 ) -> tuple[Optional[HttpRequest], bytes, bool]:
     """Read a request from the socket while enforcing size and path limits."""
 
     try:
         request, buffer = receive_request(
-            client_socket, buffer, max_body_bytes, timeouts
+            client_socket,
+            buffer,
+            max_body_bytes,
+            timeouts,
+            allow_chunked=allow_chunked,
+            expect_continue=expect_continue,
         )
     except RequestTimeout:
         return _reject(
