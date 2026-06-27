@@ -367,6 +367,27 @@ pyhttpd --access-log stdout
 
 Off by default. Long-lived upgraded connections (WebSocket) are not access-logged.
 
+## HTTP/2
+
+Pass `--enable-http2` to negotiate HTTP/2 — a from-scratch, zero-dependency
+implementation of the framing layer and HPACK header compression (including the
+RFC 7541 Huffman code, validated against the RFC's own vectors):
+
+```bash
+pyhttpd --enable-http2
+curl --http2-prior-knowledge http://localhost:4221/echo/hello   # h2c (cleartext)
+pyhttpd --enable-http2 --cert cert.pem --key key.pem
+curl --http2 https://localhost:4221/echo/hello                  # h2 over TLS (ALPN)
+```
+
+Over TLS the server advertises `h2` via ALPN; on cleartext it sniffs the HTTP/2
+connection preface for `--http2-prior-knowledge` clients, falling back to
+HTTP/1.1 otherwise. Each stream's HEADERS(+CONTINUATION)+DATA frames are
+reassembled into a request, run through the **same** middleware chain and
+handlers as HTTP/1.1, and the response is framed back as HEADERS+DATA with
+outbound flow control. Off by default. HTTP/3/QUIC remains out of scope (it
+needs UDP and a bespoke TLS integration not reachable on the standard library).
+
 ## API documentation
 
 The full endpoint surface — methods, status codes, conditional/range behavior,

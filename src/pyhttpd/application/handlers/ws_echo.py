@@ -10,6 +10,7 @@ import logging
 import struct
 from typing import Callable, Optional, Tuple
 
+from pyhttpd.application.frame_stream import BufferedFrameReader
 from pyhttpd.domain import Channel, DrainingState, Logger
 from pyhttpd.domain.websocket import (
     MAX_PAYLOAD_BYTES,
@@ -27,27 +28,6 @@ CLOSE_GOING_AWAY = 1001
 CLOSE_PROTOCOL_ERROR = 1002
 CLOSE_INVALID_PAYLOAD = 1007
 READ_SIZE = 4096
-
-
-class _FrameStream:
-    """Buffers Channel reads and yields one decoded frame at a time."""
-
-    def __init__(self, channel: Channel) -> None:
-        self._channel = channel
-        self._buffer = bytearray()
-
-    def next_frame(self) -> Optional[Frame]:
-        """Return the next complete frame, or None when the peer disconnects."""
-        while True:
-            decoded = decode_frame(bytes(self._buffer))
-            if decoded is not None:
-                frame, consumed = decoded
-                del self._buffer[:consumed]
-                return frame
-            chunk = self._channel.read(READ_SIZE)
-            if not chunk:
-                return None
-            self._buffer.extend(chunk)
 
 
 class _MessageAssembler:
@@ -97,10 +77,12 @@ def make_ws_echo_driver(
 
 
 def _run_echo(channel: Channel, draining_state: Optional[DrainingState]) -> None:
-    stream = _FrameStream(channel)
+    reader: BufferedFrameReader[Frame] = BufferedFrameReader(
+        channel, decode_frame, READ_SIZE
+    )
     assembler = _MessageAssembler()
     while True:
-        frame = stream.next_frame()
+        frame = reader.next_frame()
         if frame is None:
             return
         if draining_state is not None and draining_state.is_draining():

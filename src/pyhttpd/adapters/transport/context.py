@@ -25,6 +25,7 @@ class WorkerContext:  # pylint: disable=too-many-instance-attributes
     session_policy: Optional[Any] = None
     enable_sse: bool = False
     enable_websocket: bool = False
+    enable_http2: bool = False
     proxy_targets: tuple = ()
     proxy_timeout: float = 30.0
     vhost_directories: Optional[dict] = None

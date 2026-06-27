@@ -48,6 +48,7 @@ DEFAULT_METRICS_ENABLED = _env_bool("HTTP_SERVER_METRICS", False)
 DEFAULT_ACCESS_LOG = _env_str("HTTP_SERVER_ACCESS_LOG", "off")
 DEFAULT_ENABLE_SSE = _env_bool("HTTP_SERVER_ENABLE_SSE", False)
 DEFAULT_ENABLE_WEBSOCKET = _env_bool("HTTP_SERVER_ENABLE_WEBSOCKET", False)
+DEFAULT_ENABLE_HTTP2 = _env_bool("HTTP_SERVER_ENABLE_HTTP2", False)
 DEFAULT_PROXY_TIMEOUT = float(_env_int("HTTP_SERVER_PROXY_TIMEOUT", 30))
 DEFAULT_FILE_CACHE_CONTROL = _env_str("HTTP_SERVER_FILE_CACHE_CONTROL", "")
 DEFAULT_FILE_GZIP = _env_bool("HTTP_SERVER_FILE_GZIP", False)
@@ -265,6 +266,12 @@ def _add_observability_args(parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=DEFAULT_ENABLE_WEBSOCKET,
         help="Expose a WebSocket echo endpoint at /ws",
+    )
+    parser.add_argument(
+        "--enable-http2",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_ENABLE_HTTP2,
+        help="Negotiate HTTP/2 (h2 via ALPN, h2c via prior knowledge)",
     )
 
 
