@@ -32,6 +32,12 @@ from pyhttpd.domain.file_metadata import (
     is_not_modified,
     parse_http_date,
 )
+from pyhttpd.domain.forms import (
+    FormPart,
+    parse_multipart,
+    parse_query,
+    parse_urlencoded,
+)
 from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
 from pyhttpd.domain.metrics import HISTOGRAM_BUCKETS_SECONDS, MetricsSink
 from pyhttpd.domain.ports import (
@@ -70,6 +76,10 @@ __all__ = [
     "Clock",
     "FileMetadata",
     "FileServingOptions",
+    "FormPart",
+    "parse_multipart",
+    "parse_query",
+    "parse_urlencoded",
     "RangeNotSatisfiable",
     "UNSATISFIABLE_RANGE",
     "compute_etag",

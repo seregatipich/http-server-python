@@ -129,7 +129,7 @@ pyhttpd --auth-mode api-key \
 
 The codebase follows a clean-architecture layering under `src/pyhttpd/`, with dependencies pointing inward only:
 
-- `domain/` — dependency-free core: HTTP value types, errors, config schemas, rate-limit decisions, sandbox rules, and port protocols.
+- `domain/` — dependency-free core: HTTP value types (requests carry the parsed `query` string), errors, config schemas, rate-limit decisions, sandbox rules, query/form parsers (`domain.forms`), and port protocols.
 - `application/` — request pipeline, routing, middleware (CORS, rate limiting, validation), response rendering, and endpoint handlers. Depends on `domain` only.
 - `adapters/` — infrastructure that satisfies the domain ports: sockets and TLS, the threaded transport/worker loop, logging, token-bucket rate limiting, clock, ids, and config loading.
 - `composition.py` — composition root that wires adapters, application, and domain into a runnable `Server`.
