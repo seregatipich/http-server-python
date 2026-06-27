@@ -1,6 +1,6 @@
 """Structural protocols for domain dependencies."""
 
-from typing import Mapping, Optional, Protocol
+from typing import Dict, Mapping, Optional, Protocol
 
 from pyhttpd.domain.principal import Principal
 from pyhttpd.domain.ratelimit import RateLimitDecision
@@ -36,6 +36,16 @@ class Authenticator(Protocol):
 
     def authenticate(self, headers: Mapping[str, str]) -> Optional[Principal]:
         """Return the authenticated principal, or None when credentials fail."""
+
+
+class SessionStore(Protocol):
+    """Stores mutable session data keyed by a generated session identifier."""
+
+    def create(self) -> str:
+        """Create an empty session and return its identifier."""
+
+    def get(self, session_id: str) -> Optional[Dict[str, object]]:
+        """Return the session data, or None when missing or expired."""
 
 
 class Logger(Protocol):
