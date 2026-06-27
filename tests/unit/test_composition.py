@@ -7,16 +7,15 @@ from pyhttpd.adapters.auth import ApiKeyAuthenticator, JwtAuthenticator
 from pyhttpd.adapters.config import ServerConfig, parse_cli_args
 from pyhttpd.adapters.ratelimit import TokenBucketLimiter
 from pyhttpd.adapters.transport import ConnectionLimiter, WorkerContext
-from pyhttpd.composition import (
-    Server,
+from pyhttpd.composition import Server, build_server
+from pyhttpd.domain import AuthConfig, CorsConfig
+from pyhttpd.wiring import (
     _create_auth_config,
     _create_authenticator,
     _create_cors_config,
     _create_rate_limiter,
     _create_worker_context,
-    build_server,
 )
-from pyhttpd.domain import AuthConfig, CorsConfig
 
 
 def _args(tmp_path, extra=None):
