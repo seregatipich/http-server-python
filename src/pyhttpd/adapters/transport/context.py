@@ -24,3 +24,4 @@ class WorkerContext:  # pylint: disable=too-many-instance-attributes
     session_store: Optional[Any] = None
     session_policy: Optional[Any] = None
     enable_sse: bool = False
+    enable_websocket: bool = False

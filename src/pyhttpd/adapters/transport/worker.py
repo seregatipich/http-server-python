@@ -53,6 +53,7 @@ def _build_request_chain(
         context.metrics_sink,
         context.file_options,
         context.enable_sse,
+        context.enable_websocket,
     )
     chain = build_request_chain(
         router.dispatch,

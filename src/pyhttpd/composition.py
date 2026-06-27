@@ -181,6 +181,7 @@ def _create_worker_context(
         session_store=_create_session_store(args),
         session_policy=_create_session_policy(args),
         enable_sse=args.enable_sse,
+        enable_websocket=args.enable_websocket,
     )
 
 

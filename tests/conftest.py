@@ -216,6 +216,21 @@ def _json_error_server_process(
     )
 
 
+@pytest.fixture(name="websocket_server_process")
+def _websocket_server_process(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch the server with the WebSocket echo endpoint enabled."""
+
+    host = "127.0.0.1"
+    port = reserve_port(host)
+    directory = tmp_path_factory.mktemp("server-files-ws")
+    log_file = directory / "server.log"
+    yield from _launch_server(
+        host, port, directory, ["--enable-websocket"], log_file=log_file
+    )
+
+
 @pytest.fixture(name="sse_server_process")
 def _sse_server_process(
     tmp_path_factory: "TempPathFactory",
