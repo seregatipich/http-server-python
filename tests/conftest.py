@@ -380,6 +380,15 @@ def _sse_server_process(
     yield from _spawn_server(tmp_path_factory, "server-files-sse", ["--enable-sse"])
 
 
+@pytest.fixture(name="http2_server")
+def _http2_server(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch the server with HTTP/2 (h2c prior-knowledge) enabled."""
+
+    yield from _spawn_server(tmp_path_factory, "server-files-http2", ["--enable-http2"])
+
+
 @pytest.fixture(name="session_server_process")
 def _session_server_process(
     tmp_path_factory: "TempPathFactory",
