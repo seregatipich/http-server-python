@@ -12,6 +12,7 @@ class HttpRequest:
     path: str
     headers: dict[str, str]
     body: bytes
+    query: str = ""
 
 
 @dataclass

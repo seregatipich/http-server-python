@@ -44,8 +44,8 @@ def parse_headers(lines: list[str]) -> dict[str, str]:
     return parsed
 
 
-def parse_request_line(request_line: str) -> Tuple[str, str]:
-    """Parse the HTTP method and sanitized path from the request line."""
+def parse_request_line(request_line: str) -> Tuple[str, str, str]:
+    """Parse the HTTP method, sanitized path, and raw query from the request line."""
     try:
         method, target, _ = request_line.split(" ", 2)
     except ValueError as exc:
@@ -58,7 +58,7 @@ def parse_request_line(request_line: str) -> Tuple[str, str]:
         or f"{FILES_ENDPOINT_PREFIX}../" in target
     ):
         raise ForbiddenPath
-    return method, path
+    return method, path, parsed_target.query
 
 
 def _parse_content_length(header_value: str) -> int:
@@ -185,7 +185,7 @@ def receive_request(
 
     header_block, remainder = buffer.split(HEADER_DELIMITER, 1)
     header_lines = header_block.decode().split("\r\n")
-    method, path = parse_request_line(header_lines[0])
+    method, path, query = parse_request_line(header_lines[0])
     headers = parse_headers(header_lines[1:])
     _reject_ambiguous_framing(header_lines[1:], headers)
 
@@ -200,7 +200,7 @@ def receive_request(
     if body is None:
         return None, b""
     IO_LOGGER.debug("Parsed request", extra={"method": method, "path": path})
-    return HttpRequest(method, path, headers, body), leftover
+    return HttpRequest(method, path, headers, body, query), leftover
 
 
 def _response_headers(response: HttpResponse) -> dict[str, str]:
