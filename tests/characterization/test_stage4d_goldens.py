@@ -32,6 +32,8 @@ def _bare_context() -> MagicMock:
     context.rate_limiter = None
     context.connection_limiter = None
     context.authenticator = None
+    context.session_store = None
+    context.session_policy = None
     return context
 
 

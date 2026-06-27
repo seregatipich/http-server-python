@@ -48,6 +48,13 @@ DEFAULT_FILE_CACHE_CONTROL = _env_str("HTTP_SERVER_FILE_CACHE_CONTROL", "")
 DEFAULT_FILE_GZIP = _env_bool("HTTP_SERVER_FILE_GZIP", False)
 DEFAULT_FILE_GZIP_MIN_BYTES = _env_int("HTTP_SERVER_FILE_GZIP_MIN_BYTES", 1024)
 DEFAULT_CONTENT_SNIFFING = _env_bool("HTTP_SERVER_CONTENT_SNIFFING", False)
+DEFAULT_ERROR_FORMAT = _env_str("HTTP_SERVER_ERROR_FORMAT", "text")
+DEFAULT_ALLOW_CHUNKED_REQUESTS = _env_bool("HTTP_SERVER_ALLOW_CHUNKED_REQUESTS", False)
+DEFAULT_EXPECT_CONTINUE = _env_bool("HTTP_SERVER_EXPECT_CONTINUE", False)
+DEFAULT_SESSION_SECRET = _env_str("HTTP_SERVER_SESSION_SECRET", "")
+DEFAULT_SESSION_TTL = _env_int("HTTP_SERVER_SESSION_TTL", 3600)
+DEFAULT_SESSION_COOKIE_SECURE = _env_bool("HTTP_SERVER_SESSION_COOKIE_SECURE", False)
+DEFAULT_SESSION_COOKIE_SAMESITE = _env_str("HTTP_SERVER_SESSION_COOKIE_SAMESITE", "Lax")
 
 
 @dataclass
@@ -190,7 +197,7 @@ def _add_auth_args(parser: argparse.ArgumentParser) -> None:
     """Add authentication and authorization arguments."""
     parser.add_argument(
         "--auth-mode",
-        choices=["none", "api-key", "jwt"],
+        choices=["none", "api-key", "basic", "jwt"],
         default=DEFAULT_AUTH_MODE,
         help="Authentication mode (default: none)",
     )
@@ -228,6 +235,55 @@ def _add_observability_args(parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=DEFAULT_METRICS_ENABLED,
         help="Expose a Prometheus /metrics endpoint",
+    )
+    parser.add_argument(
+        "--error-format",
+        choices=["text", "json"],
+        default=DEFAULT_ERROR_FORMAT,
+        help="Error response body format (default: text)",
+    )
+
+
+def _add_session_args(parser: argparse.ArgumentParser) -> None:
+    """Add signed-session-cookie arguments."""
+    parser.add_argument(
+        "--session-secret",
+        default=DEFAULT_SESSION_SECRET,
+        help="HMAC secret enabling signed session cookies (empty disables)",
+    )
+    parser.add_argument(
+        "--session-ttl",
+        type=int,
+        default=DEFAULT_SESSION_TTL,
+        help="Session lifetime in seconds (sliding expiry)",
+    )
+    parser.add_argument(
+        "--session-cookie-secure",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_SESSION_COOKIE_SECURE,
+        help="Mark the session cookie Secure (TLS-only)",
+    )
+    parser.add_argument(
+        "--session-cookie-samesite",
+        choices=["Strict", "Lax", "None"],
+        default=DEFAULT_SESSION_COOKIE_SAMESITE,
+        help="SameSite attribute for the session cookie",
+    )
+
+
+def _add_request_framing_args(parser: argparse.ArgumentParser) -> None:
+    """Add opt-in request-body framing arguments."""
+    parser.add_argument(
+        "--allow-chunked-requests",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_ALLOW_CHUNKED_REQUESTS,
+        help="Decode Transfer-Encoding: chunked request bodies (default: off)",
+    )
+    parser.add_argument(
+        "--expect-continue",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_EXPECT_CONTINUE,
+        help="Honor Expect: 100-continue before reading request bodies",
     )
 
 
@@ -272,5 +328,7 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     _add_cors_args(parser)
     _add_auth_args(parser)
     _add_observability_args(parser)
+    _add_request_framing_args(parser)
+    _add_session_args(parser)
     _add_file_serving_args(parser)
     return parser.parse_args(argv)

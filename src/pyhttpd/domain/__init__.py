@@ -32,6 +32,12 @@ from pyhttpd.domain.file_metadata import (
     is_not_modified,
     parse_http_date,
 )
+from pyhttpd.domain.forms import (
+    FormPart,
+    parse_multipart,
+    parse_query,
+    parse_urlencoded,
+)
 from pyhttpd.domain.http import HttpRequest, HttpResponse, should_close
 from pyhttpd.domain.metrics import HISTOGRAM_BUCKETS_SECONDS, MetricsSink
 from pyhttpd.domain.ports import (
@@ -41,6 +47,7 @@ from pyhttpd.domain.ports import (
     IdGenerator,
     Logger,
     RateLimiter,
+    SessionStore,
 )
 from pyhttpd.domain.principal import (
     DEFAULT_AUTH_MODE,
@@ -70,6 +77,10 @@ __all__ = [
     "Clock",
     "FileMetadata",
     "FileServingOptions",
+    "FormPart",
+    "parse_multipart",
+    "parse_query",
+    "parse_urlencoded",
     "RangeNotSatisfiable",
     "UNSATISFIABLE_RANGE",
     "compute_etag",
@@ -98,6 +109,7 @@ __all__ = [
     "RateLimiter",
     "RequestEntityTooLarge",
     "ServiceUnavailable",
+    "SessionStore",
     "TokenBucketSettings",
     "Unauthorized",
     "required_scope",

@@ -7,17 +7,23 @@ import socket
 from dataclasses import dataclass
 from typing import Optional
 
-from pyhttpd.adapters.auth import ApiKeyAuthenticator, JwtAuthenticator
+from pyhttpd.adapters.auth import (
+    ApiKeyAuthenticator,
+    BasicAuthenticator,
+    JwtAuthenticator,
+)
 from pyhttpd.adapters.config.cli_args import ServerConfig
 from pyhttpd.adapters.lifecycle import ServerLifecycle
 from pyhttpd.adapters.logging.setup import configure_logging
 from pyhttpd.adapters.metrics import LockingMetricsSink
 from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
+from pyhttpd.adapters.session import InMemorySessionStore
 from pyhttpd.adapters.tls import create_server_socket
 from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
 from pyhttpd.adapters.transport.context import WorkerContext
 from pyhttpd.adapters.transport.server import run_server
 from pyhttpd.application.config_validation import validate_startup_config
+from pyhttpd.application.middleware.session import SessionCookiePolicy
 from pyhttpd.domain import (
     AuthConfig,
     Authenticator,
@@ -85,6 +91,8 @@ def _create_authenticator(args: argparse.Namespace) -> Optional[Authenticator]:
     config = _create_auth_config(args)
     if args.auth_mode == "jwt":
         return JwtAuthenticator(config)
+    if args.auth_mode == "basic":
+        return BasicAuthenticator(config)
     return ApiKeyAuthenticator(config)
 
 
@@ -117,6 +125,29 @@ def _create_file_options(args: argparse.Namespace) -> FileServingOptions:
     )
 
 
+def _create_session_store(
+    args: argparse.Namespace,
+) -> Optional[InMemorySessionStore]:
+    """Create the session store when a session secret is configured."""
+    if not args.session_secret:
+        return None
+    return InMemorySessionStore(ttl_seconds=args.session_ttl)
+
+
+def _create_session_policy(
+    args: argparse.Namespace,
+) -> Optional[SessionCookiePolicy]:
+    """Create the session cookie policy when sessions are enabled."""
+    if not args.session_secret:
+        return None
+    return SessionCookiePolicy(
+        secret=args.session_secret,
+        ttl_seconds=args.session_ttl,
+        secure=args.session_cookie_secure,
+        same_site=args.session_cookie_samesite,
+    )
+
+
 def _create_phase_timeouts(args: argparse.Namespace) -> PhaseTimeouts:
     """Create per-phase request timeouts from CLI arguments."""
     return PhaseTimeouts(
@@ -144,6 +175,11 @@ def _create_worker_context(
         metrics_sink=metrics_sink,
         file_options=_create_file_options(args),
         phase_timeouts=_create_phase_timeouts(args),
+        error_format=args.error_format,
+        allow_chunked_requests=args.allow_chunked_requests,
+        expect_continue=args.expect_continue,
+        session_store=_create_session_store(args),
+        session_policy=_create_session_policy(args),
     )
 
 

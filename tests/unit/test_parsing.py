@@ -84,6 +84,29 @@ def test_receive_request_returns_none_when_socket_closes_early():
     assert buffer == b""
 
 
+def test_parse_request_line_returns_method_path_and_query():
+    """The request line parser surfaces the query string separately from the path."""
+
+    assert parse_request_line("GET /a/b?x=1&y=2 HTTP/1.1") == ("GET", "/a/b", "x=1&y=2")
+
+
+def test_parse_request_line_empty_query_when_absent():
+    """A target without a query yields an empty query string, not None."""
+
+    assert parse_request_line("GET /plain HTTP/1.1") == ("GET", "/plain", "")
+
+
+def test_receive_request_captures_query_string():
+    """receive_request must populate HttpRequest.query from the target."""
+
+    request_bytes = b"GET /search?q=hello&n=5 HTTP/1.1\r\nHost: x\r\n\r\n"
+    client = FakeSocket([request_bytes])
+    request, _ = receive_request(client, b"")
+    assert request is not None
+    assert request.path == "/search"
+    assert request.query == "q=hello&n=5"
+
+
 def test_parse_request_line_rejects_files_traversal():
     """A '/files/..' traversal target must raise ForbiddenPath."""
 

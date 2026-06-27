@@ -43,7 +43,7 @@ pyhttpd [--directory <path>] [--host <host>] [--port <port>] \
   [--rate-limit <int>] [--rate-window-ms <int>] [--burst-capacity <int>] \
   [--rate-limit-dry-run] \
   [--socket-timeout <seconds>] [--shutdown-grace-seconds <seconds>] \
-  [--auth-mode <none|api-key|jwt>] [--auth-credentials <list>] [--auth-roles <list>] \
+  [--auth-mode <none|api-key|basic|jwt>] [--auth-credentials <list>] [--auth-roles <list>] \
   [--jwt-secret <secret>] [--jwt-issuer <iss>] [--jwt-audience <aud>]
 ```
 
@@ -63,7 +63,7 @@ pyhttpd [--directory <path>] [--host <host>] [--port <port>] \
 - `--socket-timeout` / `HTTP_SERVER_SOCKET_TIMEOUT`: socket timeout in seconds for request processing (default 60).
 - `--shutdown-grace-seconds` / `HTTP_SERVER_SHUTDOWN_GRACE_SECONDS`: grace period in seconds for graceful shutdown (default 30).
 
-- `--auth-mode` / `HTTP_SERVER_AUTH_MODE`: `none` (default), `api-key`, or `jwt`.
+- `--auth-mode` / `HTTP_SERVER_AUTH_MODE`: `none` (default), `api-key`, `basic`, or `jwt`.
 - `--auth-credentials` / `HTTP_SERVER_AUTH_CREDENTIALS`: comma-separated `identity:sha256hex` api-key pairs (store the SHA-256 hex of each key, never the raw key).
 - `--auth-roles` / `HTTP_SERVER_AUTH_ROLES`: comma-separated `identity:scope|scope` role assignments.
 - `--jwt-secret` / `HTTP_SERVER_JWT_SECRET`: shared secret for HS256 verification.
@@ -84,6 +84,10 @@ middleware runs after request validation and enforces scope-based access:
 
 - **api-key** — clients send `Authorization: ApiKey <key>`. Keys are matched by
   constant-time comparison of their SHA-256 hash, so only hashes live in config.
+- **basic** — clients send `Authorization: Basic base64(user:pass)`. The password's
+  SHA-256 hash is compared in constant time (only hashes live in config), and the
+  challenge is `Basic realm="pyhttpd"`. Basic transmits the password reversibly on
+  every request, so deploy it only behind TLS.
 - **jwt** — clients send `Authorization: Bearer <token>`. Tokens are verified as
   HS256 (hand-rolled on the standard library, zero dependencies): the algorithm
   is pinned to `HS256` (no `alg=none`), the signature is checked with
@@ -110,7 +114,7 @@ pyhttpd --auth-mode api-key \
    - Each accepted client runs inside its own daemon `threading.Thread`, enabling keep-alive sessions.
 2. **Request read and validation**
    - `_read_request_with_validation()` reads bytes with a bounded buffer, enforces `HTTP_SERVER_MAX_BODY_BYTES`, and surfaces structured parser errors.
-   - Request bodies are framed by `Content-Length` only; a `Transfer-Encoding` header or conflicting `Content-Length` values are rejected with `400` to foreclose request-smuggling desynchronization (RFC 9112 §6.3), and `Content-Length` must be canonical ASCII digits.
+   - Request bodies are framed by `Content-Length` only; a `Transfer-Encoding` header or conflicting `Content-Length` values are rejected with `400` to foreclose request-smuggling desynchronization (RFC 9112 §6.3), and `Content-Length` must be canonical ASCII digits. Chunked request bodies are opt-in via `--allow-chunked-requests`: when enabled, a single final `chunked` coding is decoded under the same body-size cap, while `Transfer-Encoding` combined with (or conflicting with) `Content-Length`, duplicated, or stacked with other codings is still rejected. `--expect-continue` makes the server answer `Expect: 100-continue` with an interim `100 Continue` once the request passes size validation, before the body is read.
    - The header block is capped at 64 KiB, so a client streaming headers without a terminating blank line is cut off with `413` instead of exhausting memory.
    - `validate_request()` whitelists HTTP methods, checks required headers, blocks traversal/null-bytes, and ensures `/files/*` paths stay under the configured root.
 3. **Rate limiting**
@@ -129,7 +133,7 @@ pyhttpd --auth-mode api-key \
 
 The codebase follows a clean-architecture layering under `src/pyhttpd/`, with dependencies pointing inward only:
 
-- `domain/` — dependency-free core: HTTP value types, errors, config schemas, rate-limit decisions, sandbox rules, and port protocols.
+- `domain/` — dependency-free core: HTTP value types (requests carry the parsed `query` string), errors, config schemas, rate-limit decisions, sandbox rules, query/form parsers (`domain.forms`), and port protocols.
 - `application/` — request pipeline, routing, middleware (CORS, rate limiting, validation), response rendering, and endpoint handlers. Depends on `domain` only.
 - `adapters/` — infrastructure that satisfies the domain ports: sockets and TLS, the threaded transport/worker loop, logging, token-bucket rate limiting, clock, ids, and config loading.
 - `composition.py` — composition root that wires adapters, application, and domain into a runnable `Server`.
@@ -197,6 +201,43 @@ Instruments: request counter (method/route/status), error counter, latency
 histogram, in-flight gauge, and rejection counters (rate-limit / connection /
 draining). `/metrics` is excluded from its own metrics. The endpoint is off by
 default, so it never appears unless explicitly enabled.
+
+## Error responses
+
+By default error responses (4xx/5xx) use the historical text envelope (empty or
+short text bodies). Pass `--error-format json` (or `HTTP_SERVER_ERROR_FORMAT=json`)
+to emit a machine-readable body instead:
+
+```bash
+pyhttpd --error-format json
+curl -s localhost:4221/nope    # {"error": "Not Found", "status": 404, "request_id": "..."}
+```
+
+The JSON body carries the reason phrase, numeric status, and the request's
+correlation id (mirrored in `X-Request-ID`); auxiliary headers such as `Allow`,
+`Retry-After`, and `RateLimit-*` are preserved. The format is opt-in so the
+default wire bytes are unchanged.
+
+## Sessions
+
+Signed session cookies are opt-in. Pass `--session-secret <secret>` (or
+`HTTP_SERVER_SESSION_SECRET`) to enable them; without a secret no `Set-Cookie`
+is ever issued. When enabled, a request without a valid session cookie is given
+a fresh server-side session and an HMAC-signed `Set-Cookie: session=...` (the
+identifier is signed with HMAC-SHA256 and verified in constant time, so a
+tampered cookie is treated as a new visitor). Sessions live in a thread-safe
+in-memory store with sliding TTL and capacity eviction, and are exposed to
+handlers as a mutable dict on the request context.
+
+```bash
+pyhttpd --session-secret "$(head -c 32 /dev/urandom | base64)" \
+  --session-ttl 3600 --session-cookie-samesite Lax --session-cookie-secure
+```
+
+Cookie attributes are configurable: `--session-ttl` (seconds, sliding),
+`--session-cookie-secure` (TLS-only), and `--session-cookie-samesite`
+(`Strict`/`Lax`/`None`). The cookie is always `HttpOnly` and scoped to `Path=/`.
+Sessions are single-process and do not survive a restart.
 
 ## API documentation
 

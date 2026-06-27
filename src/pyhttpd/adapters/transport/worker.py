@@ -31,14 +31,18 @@ from pyhttpd.adapters.transport.worker_logging import (
 )
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.middleware.assembly import build_request_chain
+from pyhttpd.application.middleware.session import make_session_middleware
+from pyhttpd.application.pipeline import Handler
 from pyhttpd.application.rendering import ErrorMapper
 from pyhttpd.application.routing import make_default_router
-from pyhttpd.domain import HttpError, HttpRequest
+from pyhttpd.domain import HttpError, HttpRequest, HttpResponse
 
 __all__ = ["handle_client", "_recv_with_deadline"]
 
 
-def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes: int):
+def _build_request_chain(
+    context: WorkerContext, client_ip: str, max_body_bytes: int
+) -> Handler:
     """Assemble the application middleware chain over the default router."""
     router = make_default_router(
         context.directory,
@@ -48,7 +52,7 @@ def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes:
         context.metrics_sink,
         context.file_options,
     )
-    return build_request_chain(
+    chain = build_request_chain(
         router.dispatch,
         cors_config=context.cors_config,
         metrics_sink=context.metrics_sink,
@@ -58,6 +62,20 @@ def _build_request_chain(context: WorkerContext, client_ip: str, max_body_bytes:
         client_ip=client_ip,
         max_body_bytes=max_body_bytes,
     )
+    return _wrap_with_session(chain, context)
+
+
+def _wrap_with_session(chain: Handler, context: WorkerContext) -> Handler:
+    if context.session_store is None or context.session_policy is None:
+        return chain
+    session_middleware = make_session_middleware(
+        context.session_store, context.session_policy
+    )
+
+    def with_session(request: HttpRequest, ctx: RequestContext) -> HttpResponse:
+        return session_middleware(request, ctx, chain)
+
+    return with_session
 
 
 def _apply_handler_timeout(
@@ -81,15 +99,20 @@ def _process_request(
     ctx = RequestContext(
         correlation_id=get_correlation_id(),
         start_ns=time.monotonic_ns(),
+        error_format=context.error_format,
     )
     chain = _build_request_chain(context, client_ip, max_body_bytes)
     try:
         response = chain(request, ctx)
     except HttpError as error:
-        response = ErrorMapper.to_response(error, request, context.cors_config)
+        response = ErrorMapper.to_response(
+            error, request, context.cors_config, ctx.error_format, ctx.correlation_id
+        )
     except Exception as error:  # pylint: disable=broad-except
         log_worker_error(error, client_addr_str)
-        response = ErrorMapper.internal_error(request, context.cors_config)
+        response = ErrorMapper.internal_error(
+            request, context.cors_config, ctx.error_format, ctx.correlation_id
+        )
     _apply_handler_timeout(client_socket, context)
     send_response(client_socket, response)
     return response.close_connection
@@ -126,6 +149,9 @@ def _process_client_requests(
                 client_address,
                 max_body_bytes,
                 context.phase_timeouts,
+                context.error_format,
+                context.allow_chunked_requests,
+                context.expect_continue,
             )
             if should_terminate:
                 break

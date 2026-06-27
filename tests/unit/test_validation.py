@@ -34,6 +34,18 @@ def run_validation(request: HttpRequest):
     return middleware(request, ctx, lambda *_: PASSTHROUGH)
 
 
+def test_validation_accepts_chunked_post_without_content_length() -> None:
+    """A decoded chunked POST has no Content-Length and must pass validation."""
+
+    request = make_request(
+        path="/files/x",
+        method="POST",
+        headers={"transfer-encoding": "chunked"},
+        body=b"decoded",
+    )
+    assert run_validation(request) is PASSTHROUGH
+
+
 def make_cors_config(**overrides) -> CorsConfig:
     """Construct a CORS config with common test defaults."""
     values = {

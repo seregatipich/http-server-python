@@ -1,7 +1,7 @@
 """Request-scoped context carried through the middleware chain."""
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Dict, Optional
 
 from pyhttpd.domain import RateLimitDecision
 
@@ -14,3 +14,5 @@ class RequestContext:
     start_ns: int
     rate_decision: Optional[RateLimitDecision] = None
     principal: Optional[str] = None
+    error_format: str = "text"
+    session: Optional[Dict[str, object]] = None
