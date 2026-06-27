@@ -125,3 +125,34 @@ def test_framing_rejects_duplicate_transfer_encoding() -> None:
 
 def test_framing_returns_false_for_content_length() -> None:
     assert _reject_ambiguous_framing(["Content-Length: 5"], allow_chunked=True) is False
+
+
+def test_framing_rejects_identity_coding() -> None:
+    with pytest.raises(ValueError):
+        _reject_ambiguous_framing(["Transfer-Encoding: identity"], allow_chunked=True)
+
+
+def test_framing_rejects_repeated_chunked_coding() -> None:
+    lines = ["Transfer-Encoding: chunked, chunked"]
+    with pytest.raises(ValueError):
+        _reject_ambiguous_framing(lines, allow_chunked=True)
+
+
+def test_rejects_leading_whitespace_in_chunk_size() -> None:
+    client = FakeSocket([b" 3\r\nabc\r\n0\r\n\r\n"])
+    with pytest.raises(ValueError):
+        read_chunked_body(client, b"", max_body_bytes=1024)
+
+
+def test_tolerates_whitespace_before_chunk_extension() -> None:
+    client = FakeSocket([b"3 ;ext\r\nabc\r\n0\r\n\r\n"])
+    body, _ = read_chunked_body(client, b"", max_body_bytes=1024)
+    assert body == b"abc"
+
+
+def test_trailer_total_capped_across_lines() -> None:
+    trailer_line = b"X: " + b"A" * 2500 + b"\r\n"
+    stream = b"3\r\nabc\r\n0\r\n" + trailer_line + trailer_line + b"\r\n"
+    client = FakeSocket([stream])
+    with pytest.raises(ValueError):
+        read_chunked_body(client, b"", max_body_bytes=1024)
