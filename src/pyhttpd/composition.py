@@ -144,6 +144,7 @@ def _create_worker_context(
         metrics_sink=metrics_sink,
         file_options=_create_file_options(args),
         phase_timeouts=_create_phase_timeouts(args),
+        error_format=args.error_format,
     )
 
 

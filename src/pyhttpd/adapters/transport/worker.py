@@ -81,15 +81,20 @@ def _process_request(
     ctx = RequestContext(
         correlation_id=get_correlation_id(),
         start_ns=time.monotonic_ns(),
+        error_format=context.error_format,
     )
     chain = _build_request_chain(context, client_ip, max_body_bytes)
     try:
         response = chain(request, ctx)
     except HttpError as error:
-        response = ErrorMapper.to_response(error, request, context.cors_config)
+        response = ErrorMapper.to_response(
+            error, request, context.cors_config, ctx.error_format, ctx.correlation_id
+        )
     except Exception as error:  # pylint: disable=broad-except
         log_worker_error(error, client_addr_str)
-        response = ErrorMapper.internal_error(request, context.cors_config)
+        response = ErrorMapper.internal_error(
+            request, context.cors_config, ctx.error_format, ctx.correlation_id
+        )
     _apply_handler_timeout(client_socket, context)
     send_response(client_socket, response)
     return response.close_connection
@@ -126,6 +131,7 @@ def _process_client_requests(
                 client_address,
                 max_body_bytes,
                 context.phase_timeouts,
+                context.error_format,
             )
             if should_terminate:
                 break

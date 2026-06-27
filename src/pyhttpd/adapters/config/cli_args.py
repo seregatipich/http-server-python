@@ -48,6 +48,7 @@ DEFAULT_FILE_CACHE_CONTROL = _env_str("HTTP_SERVER_FILE_CACHE_CONTROL", "")
 DEFAULT_FILE_GZIP = _env_bool("HTTP_SERVER_FILE_GZIP", False)
 DEFAULT_FILE_GZIP_MIN_BYTES = _env_int("HTTP_SERVER_FILE_GZIP_MIN_BYTES", 1024)
 DEFAULT_CONTENT_SNIFFING = _env_bool("HTTP_SERVER_CONTENT_SNIFFING", False)
+DEFAULT_ERROR_FORMAT = _env_str("HTTP_SERVER_ERROR_FORMAT", "text")
 
 
 @dataclass
@@ -228,6 +229,12 @@ def _add_observability_args(parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=DEFAULT_METRICS_ENABLED,
         help="Expose a Prometheus /metrics endpoint",
+    )
+    parser.add_argument(
+        "--error-format",
+        choices=["text", "json"],
+        default=DEFAULT_ERROR_FORMAT,
+        help="Error response body format (default: text)",
     )
 
 

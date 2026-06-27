@@ -1,8 +1,10 @@
 """Pure HTTP response builders."""
 
 import gzip
+import json
 import logging
 from collections.abc import Iterable
+from dataclasses import replace
 from typing import Callable, Optional, Tuple
 
 from pyhttpd.application.context import RequestContext
@@ -347,6 +349,26 @@ def internal_error_response(
     )
 
 
+def apply_error_format(
+    response: HttpResponse,
+    error_format: str,
+    request_id: Optional[str] = None,
+) -> HttpResponse:
+    """Rewrite an error response body as JSON when ``error_format`` is ``json``.
+
+    The text format is byte-preserving (the response is returned untouched).
+    Streaming responses are never rewritten, since error responses never stream.
+    """
+    if error_format != "json" or response.use_chunked or response.body_iter is not None:
+        return response
+    _, _, remainder = response.status_line.partition(" ")
+    code, _, reason = remainder.partition(" ")
+    payload = {"error": reason, "status": int(code), "request_id": request_id}
+    body = json.dumps(payload).encode()
+    headers = {**response.headers, "Content-Type": "application/json"}
+    return replace(response, headers=headers, body=body, content_length=None)
+
+
 class ErrorMapper:
     """Dispatches domain errors to their byte-exact response builders."""
 
@@ -355,8 +377,19 @@ class ErrorMapper:
         error: HttpError,
         request: Optional[HttpRequest],
         cors_config: Optional[CorsConfig],
+        error_format: str = "text",
+        request_id: Optional[str] = None,
     ) -> HttpResponse:
         """Map a domain HttpError to its corresponding HTTP response."""
+        response = ErrorMapper._build(error, request, cors_config)
+        return apply_error_format(response, error_format, request_id)
+
+    @staticmethod
+    def _build(  # pylint: disable=too-many-return-statements
+        error: HttpError,
+        request: Optional[HttpRequest],
+        cors_config: Optional[CorsConfig],
+    ) -> HttpResponse:
         if isinstance(error, BadRequest):
             return bad_request_response(request, cors_config, SECURITY_HEADERS)
         if isinstance(error, Unauthorized):
@@ -389,6 +422,9 @@ class ErrorMapper:
     def internal_error(
         request: Optional[HttpRequest],
         cors_config: Optional[CorsConfig],  # pylint: disable=unused-argument
+        error_format: str = "text",
+        request_id: Optional[str] = None,
     ) -> HttpResponse:
         """Produce the 500 response for unexpected, non-HttpError failures."""
-        return internal_error_response(request, SECURITY_HEADERS)
+        response = internal_error_response(request, SECURITY_HEADERS)
+        return apply_error_format(response, error_format, request_id)

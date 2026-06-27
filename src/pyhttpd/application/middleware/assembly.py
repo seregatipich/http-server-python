@@ -79,7 +79,9 @@ def build_request_chain(
         try:
             response = dispatch(dispatch_request, ctx)
         except HttpError as error:
-            response = ErrorMapper.to_response(error, request, cors_config)
+            response = ErrorMapper.to_response(
+                error, request, cors_config, ctx.error_format, ctx.correlation_id
+            )
         if is_head:
             response = _strip_body_for_head(response)
         if ctx.rate_decision is not None:

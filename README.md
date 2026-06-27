@@ -198,6 +198,22 @@ histogram, in-flight gauge, and rejection counters (rate-limit / connection /
 draining). `/metrics` is excluded from its own metrics. The endpoint is off by
 default, so it never appears unless explicitly enabled.
 
+## Error responses
+
+By default error responses (4xx/5xx) use the historical text envelope (empty or
+short text bodies). Pass `--error-format json` (or `HTTP_SERVER_ERROR_FORMAT=json`)
+to emit a machine-readable body instead:
+
+```bash
+pyhttpd --error-format json
+curl -s localhost:4221/nope    # {"error": "Not Found", "status": 404, "request_id": "..."}
+```
+
+The JSON body carries the reason phrase, numeric status, and the request's
+correlation id (mirrored in `X-Request-ID`); auxiliary headers such as `Allow`,
+`Retry-After`, and `RateLimit-*` are preserved. The format is opt-in so the
+default wire bytes are unchanged.
+
 ## API documentation
 
 The full endpoint surface — methods, status codes, conditional/range behavior,
