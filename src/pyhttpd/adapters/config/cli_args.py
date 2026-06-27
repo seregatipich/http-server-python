@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 
 from pyhttpd.adapters.config.env import _env_bool, _env_int, _env_list, _env_str
+from pyhttpd.adapters.config.file_config import apply_overlay, load_config_file
 from pyhttpd.domain import DEFAULT_AUTH_MODE, DEFAULT_MAX_BODY_BYTES
 
 MAX_BODY_BYTES = _env_int("HTTP_SERVER_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)
@@ -381,6 +382,9 @@ def _add_file_serving_args(parser: argparse.ArgumentParser) -> None:
 def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     """Return parsed CLI arguments for server configuration."""
     parser = argparse.ArgumentParser(description="HTTP server configuration")
+    parser.add_argument(
+        "--config", default=None, help="Path to a TOML config file (CLI flags win)"
+    )
     parser.add_argument("--directory", default=".")
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=4221)
@@ -397,4 +401,7 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     _add_vhost_args(parser)
     _add_proxy_args(parser)
     _add_file_serving_args(parser)
-    return parser.parse_args(argv)
+    namespace = parser.parse_args(argv)
+    if namespace.config:
+        apply_overlay(namespace, load_config_file(namespace.config), argv)
+    return namespace

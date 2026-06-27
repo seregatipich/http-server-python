@@ -316,6 +316,25 @@ the body is re-framed as chunked. An unreachable upstream returns `502`, a slow
 one `504` (deadline via `--proxy-timeout`). Paths outside every mount are served
 locally as usual.
 
+## Config file and live reload
+
+Pass `--config server.toml` to load settings from a TOML file (parsed with the
+stdlib `tomllib`). Keys match the long-flag names (`error_format`,
+`max_connections`, …); precedence is **CLI flag > file > environment**:
+
+```toml
+# server.toml
+error_format = "json"
+max_connections = 100
+autoindex = true
+```
+
+On `SIGHUP` the file is re-read and a curated set of reloadable fields is
+swapped atomically on the running server — error format, CORS, file-serving
+options, rate limits, and request-framing toggles — without dropping
+connections. The bind host/port and TLS socket are fixed for the process
+lifetime and are not reloaded.
+
 ## Access logs
 
 Pass `--access-log <stdout|PATH>` (or `HTTP_SERVER_ACCESS_LOG`) to emit one

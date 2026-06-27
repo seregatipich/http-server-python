@@ -4,6 +4,7 @@ import argparse
 import logging
 import signal
 import socket
+import tomllib
 from dataclasses import dataclass
 from typing import Optional
 
@@ -13,6 +14,7 @@ from pyhttpd.adapters.auth import (
     JwtAuthenticator,
 )
 from pyhttpd.adapters.config.cli_args import ServerConfig
+from pyhttpd.adapters.config.file_config import load_config_file, reapply_overlay
 from pyhttpd.adapters.lifecycle import ServerLifecycle
 from pyhttpd.adapters.logging.access_log import AccessLogger
 from pyhttpd.adapters.logging.setup import configure_logging
@@ -247,6 +249,45 @@ def _create_worker_context(
     )
 
 
+def _apply_reloadable_config(context: WorkerContext, args: argparse.Namespace) -> None:
+    """Swap the SIGHUP-reloadable fields on the shared worker context."""
+    context.error_format = args.error_format
+    context.cors_config = _create_cors_config(args)
+    context.file_options = _create_file_options(args)
+    context.rate_limiter = _create_rate_limiter(args)
+    context.allow_chunked_requests = args.allow_chunked_requests
+    context.expect_continue = args.expect_continue
+
+
+def _register_config_reload(
+    args: argparse.Namespace, handler_context: WorkerContext
+) -> None:
+    """On SIGHUP, re-read the config file and swap the reloadable fields."""
+    if not args.config or not hasattr(signal, "SIGHUP"):
+        return
+
+    def reload_handler(signum: int, _frame) -> None:
+        try:
+            overlay = load_config_file(args.config)
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            MAIN_LOGGER.error(
+                "Config reload failed",
+                extra={
+                    "event": "config_reload_failed",
+                    "error_type": type(exc).__name__,
+                },
+            )
+            return
+        reapply_overlay(args, overlay)
+        _apply_reloadable_config(handler_context, args)
+        MAIN_LOGGER.info(
+            "Configuration reloaded",
+            extra={"event": "config_reloaded", "signal": signum},
+        )
+
+    signal.signal(signal.SIGHUP, reload_handler)
+
+
 @dataclass
 class Server:
     """Fully wired server ready to accept connections."""
@@ -325,6 +366,7 @@ def build_server(args: argparse.Namespace) -> Server:
     handler_context = _create_worker_context(
         args, config, lifecycle, connection_limiter, metrics_sink
     )
+    _register_config_reload(args, handler_context)
     return Server(
         server_socket=server_socket,
         args=args,

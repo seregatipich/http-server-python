@@ -216,6 +216,34 @@ def _json_error_server_process(
     )
 
 
+@pytest.fixture(name="config_reload_server")
+def _config_reload_server(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch a server driven by a TOML config file (text error format)."""
+
+    host = "127.0.0.1"
+    port = reserve_port(host)
+    directory = tmp_path_factory.mktemp("config-reload")
+    config_path = directory / "server.toml"
+    config_path.write_text('error_format = "text"\n')
+    generator = _launch_server(
+        host,
+        port,
+        directory,
+        ["--config", str(config_path)],
+        log_file=directory / "server.log",
+    )
+    info = next(generator)
+    try:
+        yield info
+    finally:
+        try:
+            next(generator)
+        except StopIteration:
+            pass
+
+
 @pytest.fixture(name="access_log_server")
 def _access_log_server(
     tmp_path_factory: "TempPathFactory",
