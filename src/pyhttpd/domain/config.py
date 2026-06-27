@@ -33,6 +33,7 @@ class FileServingOptions:
     gzip: bool = False
     gzip_min_bytes: int = 1024
     content_sniffing: bool = False
+    autoindex: bool = False
     gzip_types: tuple[str, ...] = (
         "text/",
         "application/json",

@@ -216,6 +216,32 @@ def _json_error_server_process(
     )
 
 
+@pytest.fixture(name="autoindex_server")
+def _autoindex_server(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch a server with autoindex enabled over a populated directory."""
+
+    host = "127.0.0.1"
+    port = reserve_port(host)
+    directory = tmp_path_factory.mktemp("autoindex")
+    docs = directory / "docs"
+    docs.mkdir()
+    (docs / "readme.txt").write_text("hi")
+    (docs / "data.bin").write_bytes(b"\x00\x01\x02")
+    generator = _launch_server(
+        host, port, directory, ["--autoindex"], log_file=directory / "server.log"
+    )
+    info = next(generator)
+    try:
+        yield info
+    finally:
+        try:
+            next(generator)
+        except StopIteration:
+            pass
+
+
 @pytest.fixture(name="vhost_server")
 def _vhost_server(
     tmp_path_factory: "TempPathFactory",
