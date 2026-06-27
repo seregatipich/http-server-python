@@ -216,6 +216,33 @@ def _json_error_server_process(
     )
 
 
+@pytest.fixture(name="vhost_server")
+def _vhost_server(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch a server with two virtual hosts serving distinct directories."""
+
+    host = "127.0.0.1"
+    port = reserve_port(host)
+    default_dir = tmp_path_factory.mktemp("vhost-default")
+    dir_a = tmp_path_factory.mktemp("vhost-a")
+    dir_b = tmp_path_factory.mktemp("vhost-b")
+    (dir_a / "hello.txt").write_text("from-a")
+    (dir_b / "hello.txt").write_text("from-b")
+    args = ["--vhost", f"a.test={dir_a}", "--vhost", f"b.test={dir_b}"]
+    generator = _launch_server(
+        host, port, default_dir, args, log_file=default_dir / "server.log"
+    )
+    info = next(generator)
+    try:
+        yield info
+    finally:
+        try:
+            next(generator)
+        except StopIteration:
+            pass
+
+
 @pytest.fixture(name="proxy_pair")
 def _proxy_pair(
     tmp_path_factory: "TempPathFactory",

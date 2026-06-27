@@ -13,25 +13,15 @@ from pyhttpd.application.handlers.proxy import make_proxy_dispatch
 from pyhttpd.application.middleware.assembly import build_request_chain
 from pyhttpd.application.middleware.session import make_session_middleware
 from pyhttpd.application.pipeline import Handler
-from pyhttpd.application.routing import make_default_router
+from pyhttpd.application.routing import Router, make_default_router, make_vhost_router
 from pyhttpd.domain import HttpRequest, HttpResponse
 
 
 def build_worker_chain(
     context: WorkerContext, client_ip: str, max_body_bytes: int
 ) -> Handler:
-    """Assemble the application middleware chain over the default router."""
-    router = make_default_router(
-        context.directory,
-        context.lifecycle,
-        WORKER_PORT_LOGGER,
-        context.cors_config,
-        context.metrics_sink,
-        context.file_options,
-        context.enable_sse,
-        context.enable_websocket,
-    )
-    dispatch = _wrap_with_proxy(router.dispatch, context, client_ip)
+    """Assemble the application middleware chain over the routed dispatch."""
+    dispatch = _wrap_with_proxy(_build_routed_dispatch(context), context, client_ip)
     chain = build_request_chain(
         dispatch,
         cors_config=context.cors_config,
@@ -43,6 +33,29 @@ def build_worker_chain(
         max_body_bytes=max_body_bytes,
     )
     return _wrap_with_session(chain, context)
+
+
+def _build_routed_dispatch(context: WorkerContext) -> Handler:
+    if context.vhost_directories:
+        return make_vhost_router(
+            context.vhost_directories,
+            context.directory,
+            lambda directory: _router_for(context, directory),
+        )
+    return _router_for(context, context.directory).dispatch
+
+
+def _router_for(context: WorkerContext, directory: str) -> Router:
+    return make_default_router(
+        directory,
+        context.lifecycle,
+        WORKER_PORT_LOGGER,
+        context.cors_config,
+        context.metrics_sink,
+        context.file_options,
+        context.enable_sse,
+        context.enable_websocket,
+    )
 
 
 def _wrap_with_proxy(

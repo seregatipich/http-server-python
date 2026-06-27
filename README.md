@@ -275,6 +275,20 @@ UTF-8-validated (a violation closes with the appropriate status code); a
 graceful shutdown closes open sockets with `1001 Going Away`. The endpoint is
 off by default, so `/ws` returns 404 unless enabled.
 
+## Virtual hosts
+
+Serve multiple sites from one process with `--vhost HOST=DIR` (repeatable). The
+request's `Host` header (lowercased, port stripped) selects the directory root;
+an unmatched Host falls back to `--directory`:
+
+```bash
+pyhttpd --vhost a.example=/srv/a --vhost b.example=/srv/b --directory /srv/default
+```
+
+Each host gets its own sandboxed file root, so `/files/*` on `a.example` cannot
+reach `b.example`'s tree. With no `--vhost` flags the server behaves exactly as
+before (single root).
+
 ## Reverse proxy
 
 Mount an upstream with `--proxy-pass MOUNT=URL`; every request under `MOUNT` is

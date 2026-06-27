@@ -286,6 +286,17 @@ def _add_session_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_vhost_args(parser: argparse.ArgumentParser) -> None:
+    """Add virtual-host routing arguments."""
+    parser.add_argument(
+        "--vhost",
+        action="append",
+        default=None,
+        metavar="HOST=DIR",
+        help="Serve a Host from its own directory root (repeatable)",
+    )
+
+
 def _add_proxy_args(parser: argparse.ArgumentParser) -> None:
     """Add reverse-proxy arguments."""
     parser.add_argument(
@@ -369,6 +380,7 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     _add_observability_args(parser)
     _add_request_framing_args(parser)
     _add_session_args(parser)
+    _add_vhost_args(parser)
     _add_proxy_args(parser)
     _add_file_serving_args(parser)
     return parser.parse_args(argv)
