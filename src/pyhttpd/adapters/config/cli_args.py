@@ -44,6 +44,7 @@ DEFAULT_JWT_SECRET = _env_str("HTTP_SERVER_JWT_SECRET", "")
 DEFAULT_JWT_ISSUER = _env_str("HTTP_SERVER_JWT_ISSUER", "")
 DEFAULT_JWT_AUDIENCE = _env_str("HTTP_SERVER_JWT_AUDIENCE", "")
 DEFAULT_METRICS_ENABLED = _env_bool("HTTP_SERVER_METRICS", False)
+DEFAULT_ENABLE_SSE = _env_bool("HTTP_SERVER_ENABLE_SSE", False)
 DEFAULT_FILE_CACHE_CONTROL = _env_str("HTTP_SERVER_FILE_CACHE_CONTROL", "")
 DEFAULT_FILE_GZIP = _env_bool("HTTP_SERVER_FILE_GZIP", False)
 DEFAULT_FILE_GZIP_MIN_BYTES = _env_int("HTTP_SERVER_FILE_GZIP_MIN_BYTES", 1024)
@@ -241,6 +242,12 @@ def _add_observability_args(parser: argparse.ArgumentParser) -> None:
         choices=["text", "json"],
         default=DEFAULT_ERROR_FORMAT,
         help="Error response body format (default: text)",
+    )
+    parser.add_argument(
+        "--enable-sse",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_ENABLE_SSE,
+        help="Expose a Server-Sent Events stream at /events",
     )
 
 

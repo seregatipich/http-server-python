@@ -239,6 +239,23 @@ Cookie attributes are configurable: `--session-ttl` (seconds, sliding),
 (`Strict`/`Lax`/`None`). The cookie is always `HttpOnly` and scoped to `Path=/`.
 Sessions are single-process and do not survive a restart.
 
+## Server-Sent Events
+
+Pass `--enable-sse` (or `HTTP_SERVER_ENABLE_SSE=true`) to expose a streaming
+`GET /events` endpoint in `text/event-stream` format, built on the chunked
+streaming path:
+
+```bash
+pyhttpd --enable-sse
+curl -N "localhost:4221/events?count=5"   # id:/event:/data: frames, one per tick
+```
+
+The stream emits `count` heartbeat events (default 5, capped at 1000) and is
+drain-aware: a graceful shutdown ends the stream instead of holding the
+connection open. Each subscriber pins a worker thread for the stream's lifetime,
+so the connection cap bounds concurrent subscribers. The endpoint is off by
+default, so `/events` returns 404 unless explicitly enabled.
+
 ## API documentation
 
 The full endpoint surface — methods, status codes, conditional/range behavior,

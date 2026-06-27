@@ -180,6 +180,7 @@ def _create_worker_context(
         expect_continue=args.expect_continue,
         session_store=_create_session_store(args),
         session_policy=_create_session_policy(args),
+        enable_sse=args.enable_sse,
     )
 
 
