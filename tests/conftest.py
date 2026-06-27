@@ -162,6 +162,31 @@ def _authed_server_process(
     yield from _launch_server(host, port, directory, auth_args, log_file=log_file)
 
 
+BASIC_USER = "alice"
+BASIC_PASSWORD = "s3cret-pass"
+
+
+@pytest.fixture(name="basic_auth_server_process")
+def _basic_auth_server_process(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch the server in HTTP Basic auth mode with a read-only identity."""
+
+    host = "127.0.0.1"
+    port = reserve_port(host)
+    directory = tmp_path_factory.mktemp("server-files-basic")
+    log_file = directory / "server.log"
+    auth_args = [
+        "--auth-mode",
+        "basic",
+        "--auth-credentials",
+        f"{BASIC_USER}:{_sha256_hex(BASIC_PASSWORD)}",
+        "--auth-roles",
+        f"{BASIC_USER}:files:read",
+    ]
+    yield from _launch_server(host, port, directory, auth_args, log_file=log_file)
+
+
 @pytest.fixture(name="jwt_server_process")
 def _jwt_server_process(
     tmp_path_factory: "TempPathFactory",

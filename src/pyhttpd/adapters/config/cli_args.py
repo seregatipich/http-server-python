@@ -193,7 +193,7 @@ def _add_auth_args(parser: argparse.ArgumentParser) -> None:
     """Add authentication and authorization arguments."""
     parser.add_argument(
         "--auth-mode",
-        choices=["none", "api-key", "jwt"],
+        choices=["none", "api-key", "basic", "jwt"],
         default=DEFAULT_AUTH_MODE,
         help="Authentication mode (default: none)",
     )

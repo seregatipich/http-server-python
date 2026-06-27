@@ -7,7 +7,11 @@ import socket
 from dataclasses import dataclass
 from typing import Optional
 
-from pyhttpd.adapters.auth import ApiKeyAuthenticator, JwtAuthenticator
+from pyhttpd.adapters.auth import (
+    ApiKeyAuthenticator,
+    BasicAuthenticator,
+    JwtAuthenticator,
+)
 from pyhttpd.adapters.config.cli_args import ServerConfig
 from pyhttpd.adapters.lifecycle import ServerLifecycle
 from pyhttpd.adapters.logging.setup import configure_logging
@@ -85,6 +89,8 @@ def _create_authenticator(args: argparse.Namespace) -> Optional[Authenticator]:
     config = _create_auth_config(args)
     if args.auth_mode == "jwt":
         return JwtAuthenticator(config)
+    if args.auth_mode == "basic":
+        return BasicAuthenticator(config)
     return ApiKeyAuthenticator(config)
 
 
