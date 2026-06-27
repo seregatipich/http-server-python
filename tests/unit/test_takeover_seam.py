@@ -55,7 +55,7 @@ def _run_process_request(response: HttpResponse):
     request = HttpRequest("GET", "/events", {}, b"")
     with (
         patch(
-            "pyhttpd.adapters.transport.worker._build_request_chain",
+            "pyhttpd.adapters.transport.worker.build_worker_chain",
             return_value=lambda _req, _ctx: response,
         ),
         patch("pyhttpd.adapters.transport.worker.send_response") as send,
