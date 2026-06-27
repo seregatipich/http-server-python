@@ -19,3 +19,5 @@ class WorkerContext:  # pylint: disable=too-many-instance-attributes
     file_options: Optional[Any] = None
     phase_timeouts: Optional[Any] = None
     error_format: str = "text"
+    allow_chunked_requests: bool = False
+    expect_continue: bool = False

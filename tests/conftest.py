@@ -191,6 +191,25 @@ def _json_error_server_process(
     )
 
 
+@pytest.fixture(name="chunked_server_process")
+def _chunked_server_process(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch the server with chunked request decoding and 100-continue enabled."""
+
+    host = "127.0.0.1"
+    port = reserve_port(host)
+    directory = tmp_path_factory.mktemp("server-files-chunked")
+    log_file = directory / "server.log"
+    yield from _launch_server(
+        host,
+        port,
+        directory,
+        ["--allow-chunked-requests", "--expect-continue"],
+        log_file=log_file,
+    )
+
+
 @pytest.fixture()
 def file_storage(tmp_path: Path) -> Path:
     """Provide a temporary directory for file persistence tests."""

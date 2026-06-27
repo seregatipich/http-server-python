@@ -33,6 +33,11 @@ def _enforce_safe_path(request: HttpRequest) -> None:
 
 
 def _enforce_post_constraints(request: HttpRequest, max_body_bytes: int) -> None:
+    if "transfer-encoding" in request.headers:
+        # A chunked body only reaches here when chunked requests are enabled; the
+        # decoder already reassembled and size-capped it, so Content-Length
+        # framing checks do not apply.
+        return
     declared_length = request.headers.get("content-length")
     if declared_length is None:
         raise BadRequest("missing Content-Length")

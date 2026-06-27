@@ -110,7 +110,7 @@ pyhttpd --auth-mode api-key \
    - Each accepted client runs inside its own daemon `threading.Thread`, enabling keep-alive sessions.
 2. **Request read and validation**
    - `_read_request_with_validation()` reads bytes with a bounded buffer, enforces `HTTP_SERVER_MAX_BODY_BYTES`, and surfaces structured parser errors.
-   - Request bodies are framed by `Content-Length` only; a `Transfer-Encoding` header or conflicting `Content-Length` values are rejected with `400` to foreclose request-smuggling desynchronization (RFC 9112 §6.3), and `Content-Length` must be canonical ASCII digits.
+   - Request bodies are framed by `Content-Length` only; a `Transfer-Encoding` header or conflicting `Content-Length` values are rejected with `400` to foreclose request-smuggling desynchronization (RFC 9112 §6.3), and `Content-Length` must be canonical ASCII digits. Chunked request bodies are opt-in via `--allow-chunked-requests`: when enabled, a single final `chunked` coding is decoded under the same body-size cap, while `Transfer-Encoding` combined with (or conflicting with) `Content-Length`, duplicated, or stacked with other codings is still rejected. `--expect-continue` makes the server answer `Expect: 100-continue` with an interim `100 Continue` once the request passes size validation, before the body is read.
    - The header block is capped at 64 KiB, so a client streaming headers without a terminating blank line is cut off with `413` instead of exhausting memory.
    - `validate_request()` whitelists HTTP methods, checks required headers, blocks traversal/null-bytes, and ensures `/files/*` paths stay under the configured root.
 3. **Rate limiting**
