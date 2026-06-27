@@ -21,3 +21,5 @@ class WorkerContext:  # pylint: disable=too-many-instance-attributes
     error_format: str = "text"
     allow_chunked_requests: bool = False
     expect_continue: bool = False
+    session_store: Optional[Any] = None
+    session_policy: Optional[Any] = None

@@ -47,6 +47,7 @@ from pyhttpd.domain.ports import (
     IdGenerator,
     Logger,
     RateLimiter,
+    SessionStore,
 )
 from pyhttpd.domain.principal import (
     DEFAULT_AUTH_MODE,
@@ -108,6 +109,7 @@ __all__ = [
     "RateLimiter",
     "RequestEntityTooLarge",
     "ServiceUnavailable",
+    "SessionStore",
     "TokenBucketSettings",
     "Unauthorized",
     "required_scope",

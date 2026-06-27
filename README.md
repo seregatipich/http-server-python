@@ -218,6 +218,27 @@ correlation id (mirrored in `X-Request-ID`); auxiliary headers such as `Allow`,
 `Retry-After`, and `RateLimit-*` are preserved. The format is opt-in so the
 default wire bytes are unchanged.
 
+## Sessions
+
+Signed session cookies are opt-in. Pass `--session-secret <secret>` (or
+`HTTP_SERVER_SESSION_SECRET`) to enable them; without a secret no `Set-Cookie`
+is ever issued. When enabled, a request without a valid session cookie is given
+a fresh server-side session and an HMAC-signed `Set-Cookie: session=...` (the
+identifier is signed with HMAC-SHA256 and verified in constant time, so a
+tampered cookie is treated as a new visitor). Sessions live in a thread-safe
+in-memory store with sliding TTL and capacity eviction, and are exposed to
+handlers as a mutable dict on the request context.
+
+```bash
+pyhttpd --session-secret "$(head -c 32 /dev/urandom | base64)" \
+  --session-ttl 3600 --session-cookie-samesite Lax --session-cookie-secure
+```
+
+Cookie attributes are configurable: `--session-ttl` (seconds, sliding),
+`--session-cookie-secure` (TLS-only), and `--session-cookie-samesite`
+(`Strict`/`Lax`/`None`). The cookie is always `HttpOnly` and scoped to `Path=/`.
+Sessions are single-process and do not survive a restart.
+
 ## API documentation
 
 The full endpoint surface — methods, status codes, conditional/range behavior,

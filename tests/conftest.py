@@ -216,6 +216,25 @@ def _json_error_server_process(
     )
 
 
+@pytest.fixture(name="session_server_process")
+def _session_server_process(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch the server with signed session cookies enabled."""
+
+    host = "127.0.0.1"
+    port = reserve_port(host)
+    directory = tmp_path_factory.mktemp("server-files-session")
+    log_file = directory / "server.log"
+    yield from _launch_server(
+        host,
+        port,
+        directory,
+        ["--session-secret", "integration-session-secret"],
+        log_file=log_file,
+    )
+
+
 @pytest.fixture(name="chunked_server_process")
 def _chunked_server_process(
     tmp_path_factory: "TempPathFactory",
