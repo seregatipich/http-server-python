@@ -82,7 +82,7 @@ def _consume_trailers(reader: _ChunkedReader) -> Optional[bool]:
         if not line:
             return True
         total += len(line)
-        if total > MAX_TRAILER_BYTES:
+        if total >= MAX_TRAILER_BYTES:
             raise ValueError("trailer section exceeds limit")
 
 
@@ -102,7 +102,10 @@ def read_chunked_body(
         size_line = reader.read_line(MAX_CHUNK_SIZE_LINE)
         if size_line is None:
             return None, b""
-        chunk_size = _parse_chunk_size(size_line.split(b";", 1)[0].strip())
+        # rstrip tolerates optional whitespace before a chunk extension but keeps
+        # a leading space inside the token, so _parse_chunk_size rejects it as
+        # non-hex rather than silently accepting a non-RFC chunk-size line.
+        chunk_size = _parse_chunk_size(size_line.split(b";", 1)[0].rstrip())
         if chunk_size == 0:
             if _consume_trailers(reader) is None:
                 return None, b""

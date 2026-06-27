@@ -198,6 +198,11 @@ def _read_request_body(
     expect_continue: bool,
 ) -> Tuple[Optional[bytes], bytes]:
     if is_chunked:
+        # A chunked body has no declared size to pre-validate, so 100 Continue is
+        # sent unconditionally; the decoder still caps the body at max_body_bytes.
+        # The Content-Length path below validates the declared size first, so the
+        # two paths are intentionally asymmetric -- do not "align" them by moving
+        # this send after the decoder, which would break the Expect handshake.
         if _wants_continue(headers, expect_continue):
             client_socket.sendall(_CONTINUE_RESPONSE)
         return read_chunked_body(client_socket, remainder, max_body_bytes, timeouts)
