@@ -14,6 +14,7 @@ from pyhttpd.adapters.auth import (
 )
 from pyhttpd.adapters.config.cli_args import ServerConfig
 from pyhttpd.adapters.lifecycle import ServerLifecycle
+from pyhttpd.adapters.logging.access_log import AccessLogger
 from pyhttpd.adapters.logging.setup import configure_logging
 from pyhttpd.adapters.metrics import LockingMetricsSink
 from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
@@ -114,6 +115,26 @@ def _create_rate_limiter(args: argparse.Namespace) -> Optional[TokenBucketLimite
 def _create_metrics_sink(args: argparse.Namespace) -> Optional[MetricsSink]:
     """Create the metrics sink when metrics are enabled, else None."""
     return LockingMetricsSink() if args.metrics else None
+
+
+def _create_access_logger(args: argparse.Namespace) -> Optional[AccessLogger]:
+    """Create the Combined Log Format access logger, or None when disabled."""
+    destination = args.access_log
+    if destination == "off":
+        return None
+    logger = logging.getLogger("pyhttpd.access")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    for existing in list(logger.handlers):
+        logger.removeHandler(existing)
+    handler: logging.Handler = (
+        logging.StreamHandler()
+        if destination == "stdout"
+        else logging.FileHandler(destination)
+    )
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
+    return AccessLogger(logger)
 
 
 def _create_file_options(args: argparse.Namespace) -> FileServingOptions:
@@ -222,6 +243,7 @@ def _create_worker_context(
         proxy_targets=_create_proxy_targets(args),
         proxy_timeout=args.proxy_timeout,
         vhost_directories=_create_vhost_directories(args),
+        access_logger=_create_access_logger(args),
     )
 
 

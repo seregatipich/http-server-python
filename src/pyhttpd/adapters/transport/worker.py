@@ -77,6 +77,8 @@ def _process_request(
     if not response.streaming:
         _apply_handler_timeout(client_socket, context)
     send_response(client_socket, response)
+    if context.access_logger is not None:
+        context.access_logger.record(client_ip, request, response)
     return response.close_connection
 
 

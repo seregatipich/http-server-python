@@ -216,6 +216,33 @@ def _json_error_server_process(
     )
 
 
+@pytest.fixture(name="access_log_server")
+def _access_log_server(
+    tmp_path_factory: "TempPathFactory",
+) -> Generator[ServerProcessInfo, None, None]:
+    """Launch a server writing a Combined Log Format access log to a file."""
+
+    host = "127.0.0.1"
+    port = reserve_port(host)
+    directory = tmp_path_factory.mktemp("access-log")
+    access_path = directory / "access.log"
+    generator = _launch_server(
+        host,
+        port,
+        directory,
+        ["--access-log", str(access_path)],
+        log_file=directory / "server.log",
+    )
+    info = next(generator)
+    try:
+        yield info
+    finally:
+        try:
+            next(generator)
+        except StopIteration:
+            pass
+
+
 @pytest.fixture(name="autoindex_server")
 def _autoindex_server(
     tmp_path_factory: "TempPathFactory",

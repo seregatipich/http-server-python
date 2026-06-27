@@ -44,6 +44,7 @@ DEFAULT_JWT_SECRET = _env_str("HTTP_SERVER_JWT_SECRET", "")
 DEFAULT_JWT_ISSUER = _env_str("HTTP_SERVER_JWT_ISSUER", "")
 DEFAULT_JWT_AUDIENCE = _env_str("HTTP_SERVER_JWT_AUDIENCE", "")
 DEFAULT_METRICS_ENABLED = _env_bool("HTTP_SERVER_METRICS", False)
+DEFAULT_ACCESS_LOG = _env_str("HTTP_SERVER_ACCESS_LOG", "off")
 DEFAULT_ENABLE_SSE = _env_bool("HTTP_SERVER_ENABLE_SSE", False)
 DEFAULT_ENABLE_WEBSOCKET = _env_bool("HTTP_SERVER_ENABLE_WEBSOCKET", False)
 DEFAULT_PROXY_TIMEOUT = float(_env_int("HTTP_SERVER_PROXY_TIMEOUT", 30))
@@ -239,6 +240,12 @@ def _add_observability_args(parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=DEFAULT_METRICS_ENABLED,
         help="Expose a Prometheus /metrics endpoint",
+    )
+    parser.add_argument(
+        "--access-log",
+        default=DEFAULT_ACCESS_LOG,
+        metavar="off|stdout|PATH",
+        help="Combined Log Format access log destination (default: off)",
     )
     parser.add_argument(
         "--error-format",
