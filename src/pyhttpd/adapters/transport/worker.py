@@ -52,6 +52,7 @@ def _build_request_chain(
         context.cors_config,
         context.metrics_sink,
         context.file_options,
+        context.enable_sse,
     )
     chain = build_request_chain(
         router.dispatch,

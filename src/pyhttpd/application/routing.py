@@ -8,6 +8,7 @@ from pyhttpd.application.handlers.echo import make_echo_handler
 from pyhttpd.application.handlers.files import make_files_handler, make_index_handler
 from pyhttpd.application.handlers.healthz import make_healthz_handler
 from pyhttpd.application.handlers.metrics import make_metrics_handler
+from pyhttpd.application.handlers.sse import make_sse_handler
 from pyhttpd.application.handlers.user_agent import make_user_agent_handler
 from pyhttpd.domain import (
     FILES_ENDPOINT_PREFIX,
@@ -59,6 +60,7 @@ def make_default_router(
     cors_config: Optional[CorsConfig] = None,
     metrics_sink: Optional[MetricsSink] = None,
     file_options: Optional[FileServingOptions] = None,
+    enable_sse: bool = False,
 ) -> Router:
     """Wire the default route table in legacy match order."""
     healthz = make_healthz_handler(draining_state, logger)
@@ -76,4 +78,7 @@ def make_default_router(
     if metrics_sink is not None:
         metrics = make_metrics_handler(metrics_sink)
         routes.append(Route(lambda request: request.path == "/metrics", metrics))
+    if enable_sse:
+        sse = make_sse_handler(draining_state, logger)
+        routes.append(Route(lambda request: request.path == "/events", sse))
     return Router(routes)

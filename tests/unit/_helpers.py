@@ -6,9 +6,13 @@ from pyhttpd.domain import HttpRequest
 PASSTHROUGH = object()
 
 
-def make_request(path="/", method="GET", headers=None, body=b"") -> HttpRequest:
+def make_request(
+    path="/", method="GET", headers=None, body=b"", query=""
+) -> HttpRequest:
     """Build a minimal HttpRequest test double with sane defaults."""
-    return HttpRequest(method=method, path=path, headers=headers or {}, body=body)
+    return HttpRequest(
+        method=method, path=path, headers=headers or {}, body=body, query=query
+    )
 
 
 def make_context(correlation_id=None) -> RequestContext:
