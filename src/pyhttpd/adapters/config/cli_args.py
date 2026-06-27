@@ -203,7 +203,7 @@ def _add_auth_args(parser: argparse.ArgumentParser) -> None:
     """Add authentication and authorization arguments."""
     parser.add_argument(
         "--auth-mode",
-        choices=["none", "api-key", "basic", "jwt"],
+        choices=["none", "api-key", "basic", "jwt", "client-cert"],
         default=DEFAULT_AUTH_MODE,
         help="Authentication mode (default: none)",
     )
@@ -390,6 +390,24 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=4221)
     parser.add_argument("--cert", help="Path to TLS certificate file")
     parser.add_argument("--key", help="Path to TLS private key file")
+    parser.add_argument(
+        "--tls-sni",
+        action="append",
+        default=None,
+        metavar="HOST:CERT:KEY",
+        help="Serve a per-SNI-host certificate (repeatable)",
+    )
+    parser.add_argument(
+        "--tls-client-ca",
+        default=None,
+        help="CA bundle used to verify mutual-TLS client certificates",
+    )
+    parser.add_argument(
+        "--tls-require-client-cert",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Require a valid client certificate (mutual TLS)",
+    )
     _add_logging_args(parser)
     _add_connection_limit_args(parser)
     _add_timeout_args(parser)

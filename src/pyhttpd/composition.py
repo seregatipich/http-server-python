@@ -13,6 +13,7 @@ from pyhttpd.adapters.auth import (
     BasicAuthenticator,
     JwtAuthenticator,
 )
+from pyhttpd.adapters.auth.client_cert import ClientCertAuthenticator
 from pyhttpd.adapters.config.cli_args import ServerConfig
 from pyhttpd.adapters.config.file_config import load_config_file, reapply_overlay
 from pyhttpd.adapters.lifecycle import ServerLifecycle
@@ -97,7 +98,19 @@ def _create_authenticator(args: argparse.Namespace) -> Optional[Authenticator]:
         return JwtAuthenticator(config)
     if args.auth_mode == "basic":
         return BasicAuthenticator(config)
+    if args.auth_mode == "client-cert":
+        return ClientCertAuthenticator(config)
     return ApiKeyAuthenticator(config)
+
+
+def _create_client_cert_roles(args: argparse.Namespace) -> Optional[dict[str, list]]:
+    """Build the cert-identity-to-scope map for mutual-TLS authentication."""
+    if args.auth_mode != "client-cert":
+        return None
+    return {
+        identity: [scope for scope in spec.split("|") if scope]
+        for identity, spec in _parse_pairs(args.auth_roles).items()
+    }
 
 
 def _create_rate_limiter(args: argparse.Namespace) -> Optional[TokenBucketLimiter]:
@@ -246,6 +259,7 @@ def _create_worker_context(
         proxy_timeout=args.proxy_timeout,
         vhost_directories=_create_vhost_directories(args),
         access_logger=_create_access_logger(args),
+        client_cert_roles=_create_client_cert_roles(args),
     )
 
 

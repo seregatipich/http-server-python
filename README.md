@@ -283,6 +283,25 @@ when a `/files/*` GET resolves to a directory (otherwise such a request is a
 and the listing never escapes the sandbox. Off by default, so directory requests
 keep returning 404 unless enabled.
 
+## TLS: SNI and mutual TLS
+
+Beyond the basic `--cert`/`--key` termination, the server supports SNI multi-cert
+and mutual TLS (all via the stdlib `ssl` module):
+
+```bash
+pyhttpd --cert default.crt --key default.key \
+  --tls-sni a.example:a.crt:a.key --tls-sni b.example:b.crt:b.key \
+  --tls-client-ca ca.crt --tls-require-client-cert \
+  --auth-mode client-cert --auth-roles "writer:files:read|files:write"
+```
+
+`--tls-sni HOST:CERT:KEY` (repeatable) serves a per-host certificate selected by
+the TLS SNI extension, falling back to the default cert. `--tls-client-ca` plus
+`--tls-require-client-cert` enable mutual TLS: clients without a CA-signed
+certificate are rejected at the handshake. With `--auth-mode client-cert`, the
+verified certificate's Common Name (or DNS SAN) becomes the principal identity
+and is mapped to scopes via `--auth-roles`, so RBAC applies to cert identities.
+
 ## Virtual hosts
 
 Serve multiple sites from one process with `--vhost HOST=DIR` (repeatable). The
