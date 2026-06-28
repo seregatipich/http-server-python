@@ -31,3 +31,4 @@ class WorkerContext:  # pylint: disable=too-many-instance-attributes
     vhost_directories: Optional[dict] = None
     access_logger: Optional[Any] = None
     client_cert_roles: Optional[dict] = None
+    tls_context: Optional[Any] = None

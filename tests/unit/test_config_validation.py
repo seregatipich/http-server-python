@@ -54,3 +54,55 @@ def test_jwt_mode_requires_secret(tmp_path):
     """JWT auth without a secret is reported."""
     errors = validate_startup_config(_args(tmp_path, ["--auth-mode", "jwt"]))
     assert any("secret" in error.lower() for error in errors)
+
+
+def _tls_pair(tmp_path):
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    cert.write_text("x")
+    key.write_text("x")
+    return ["--cert", str(cert), "--key", str(key)]
+
+
+def test_require_client_cert_without_ca_is_rejected(tmp_path):
+    """Requiring a client cert without a CA bundle would fail open and is rejected."""
+    errors = validate_startup_config(
+        _args(tmp_path, _tls_pair(tmp_path) + ["--tls-require-client-cert"])
+    )
+    assert any("tls-client-ca" in error.lower() for error in errors)
+
+
+def test_client_ca_without_cert_and_key_is_rejected(tmp_path):
+    """mTLS verification flags without server TLS would run plaintext and are rejected."""
+    errors = validate_startup_config(
+        _args(tmp_path, ["--tls-client-ca", "/etc/ssl/ca.pem"])
+    )
+    assert any("--cert" in error and "--key" in error for error in errors)
+
+
+def test_require_client_cert_without_cert_and_key_is_rejected(tmp_path):
+    """Requiring a client cert without server TLS would run plaintext and is rejected."""
+    errors = validate_startup_config(_args(tmp_path, ["--tls-require-client-cert"]))
+    assert any("--cert" in error and "--key" in error for error in errors)
+
+
+def test_tls_sni_without_cert_and_key_is_rejected(tmp_path):
+    """An SNI certificate map without base TLS would run plaintext and is rejected."""
+    errors = validate_startup_config(
+        _args(tmp_path, ["--tls-sni", "example.com:/c.pem:/k.pem"])
+    )
+    assert any("--cert" in error and "--key" in error for error in errors)
+
+
+def test_full_mtls_configuration_is_valid(tmp_path):
+    """A complete mTLS configuration (cert, key, CA, require) is accepted."""
+    ca = tmp_path / "ca.pem"
+    ca.write_text("x")
+    errors = validate_startup_config(
+        _args(
+            tmp_path,
+            _tls_pair(tmp_path)
+            + ["--tls-client-ca", str(ca), "--tls-require-client-cert"],
+        )
+    )
+    assert errors == []

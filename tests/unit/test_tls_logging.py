@@ -4,11 +4,11 @@ import logging
 import ssl
 from unittest.mock import MagicMock, patch
 
-from pyhttpd.adapters import create_server_socket
+from pyhttpd.adapters.tls import build_tls_context
 
 
-def test_create_server_socket_logs_tls_error(caplog):
-    """Verify that TLS errors during socket creation are logged as CRITICAL."""
+def test_build_tls_context_logs_tls_error(caplog):
+    """Verify that TLS errors while building the context are logged as CRITICAL."""
     caplog.set_level(logging.CRITICAL)
 
     mock_args = MagicMock()
@@ -18,13 +18,9 @@ def test_create_server_socket_logs_tls_error(caplog):
     mock_args.key = "fake_key.pem"
 
     with (
-        patch("pyhttpd.adapters.tls.socket.create_server") as mock_create_server,
         patch("pyhttpd.adapters.tls.ssl.SSLContext") as mock_ssl_context,
         patch("pyhttpd.adapters.tls.sys.exit") as mock_exit,
     ):
-
-        mock_server_sock = MagicMock()
-        mock_create_server.return_value = mock_server_sock
 
         # Simulate SSLError when loading cert chain
         context_instance = MagicMock()
@@ -33,7 +29,7 @@ def test_create_server_socket_logs_tls_error(caplog):
         )
         mock_ssl_context.return_value = context_instance
 
-        create_server_socket(mock_args)
+        build_tls_context(mock_args)
 
         # Verify exit was called
         mock_exit.assert_called_with(1)

@@ -24,6 +24,7 @@ from pyhttpd.adapters.logging.access_log import AccessLogger
 from pyhttpd.adapters.metrics import LockingMetricsSink
 from pyhttpd.adapters.ratelimit.token_bucket import TokenBucketLimiter
 from pyhttpd.adapters.session import InMemorySessionStore
+from pyhttpd.adapters.tls import build_tls_context
 from pyhttpd.adapters.transport.connection_limiter import ConnectionLimiter
 from pyhttpd.adapters.transport.context import WorkerContext
 from pyhttpd.application.middleware.session import SessionCookiePolicy
@@ -257,6 +258,7 @@ def _create_worker_context(
         vhost_directories=_create_vhost_directories(args),
         access_logger=_create_access_logger(args),
         client_cert_roles=_create_client_cert_roles(args),
+        tls_context=build_tls_context(args),
     )
 
 
