@@ -82,7 +82,15 @@ def _run_echo(channel: Channel, draining_state: Optional[DrainingState]) -> None
     )
     assembler = _MessageAssembler()
     while True:
-        frame = reader.next_frame()
+        try:
+            frame = reader.next_frame()
+        except TimeoutError:
+            # An idle/slow peer (or a stalled partial frame) hit the read
+            # deadline. Reacting here bounds the worker so it cannot be held
+            # open forever, and lets a draining server send Close before exit.
+            if draining_state is not None and draining_state.is_draining():
+                _send_close(channel, CLOSE_GOING_AWAY)
+            return
         if frame is None:
             return
         if draining_state is not None and draining_state.is_draining():

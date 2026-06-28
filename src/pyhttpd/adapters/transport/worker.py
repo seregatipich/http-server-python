@@ -87,7 +87,7 @@ def _process_request(
             request, context.cors_config, ctx.error_format, ctx.correlation_id
         )
     if response.upgrade is not None:
-        return _perform_upgrade(client_socket, response)
+        return _perform_upgrade(client_socket, response, _upgrade_read_timeout(context))
     if not response.streaming:
         _apply_handler_timeout(client_socket, context)
     send_response(client_socket, response)
@@ -96,18 +96,31 @@ def _process_request(
     return response.close_connection
 
 
-def _perform_upgrade(client_socket: socket.socket, response: HttpResponse) -> bool:
+def _upgrade_read_timeout(context: WorkerContext) -> float | None:
+    """Read/idle deadline for an upgraded (e.g. WebSocket) connection."""
+    if context.config is not None:
+        return context.config.socket_timeout
+    return None
+
+
+def _perform_upgrade(
+    client_socket: socket.socket,
+    response: HttpResponse,
+    read_timeout: float | None,
+) -> bool:
     """Write the handshake headers verbatim, then hand the socket to the driver.
 
     Upgrade responses (101 Switching Protocols) carry no body and must not be
     reframed with Content-Length/Connection, so the handshake block is written
-    directly. The socket switches to blocking so the protocol driver owns its
-    own read deadlines; the connection always closes when the driver returns.
+    directly. The socket keeps a finite read deadline so an idle or slow peer
+    cannot pin the worker thread (and its connection slot) forever, and so a
+    draining server can close the connection during graceful shutdown; the
+    connection always closes when the driver returns.
     """
     header_lines = [response.status_line]
     header_lines.extend(f"{name}: {value}" for name, value in response.headers.items())
     client_socket.sendall("\r\n".join(header_lines).encode() + b"\r\n\r\n")
-    client_socket.settimeout(None)
+    client_socket.settimeout(read_timeout)
     assert response.upgrade is not None
     response.upgrade(SocketChannel(client_socket))
     return True

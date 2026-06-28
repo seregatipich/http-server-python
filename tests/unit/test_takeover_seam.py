@@ -35,7 +35,7 @@ def test_perform_upgrade_writes_handshake_and_invokes_driver() -> None:
         upgrade=driver,
     )
 
-    result = _perform_upgrade(sock, response)
+    result = _perform_upgrade(sock, response, 30.0)
 
     assert result is True
     sent = sock.sendall.call_args[0][0]
@@ -43,7 +43,7 @@ def test_perform_upgrade_writes_handshake_and_invokes_driver() -> None:
     assert b"Upgrade: websocket\r\n" in sent
     assert sent.endswith(b"\r\n\r\n")
     assert b"Content-Length" not in sent
-    sock.settimeout.assert_called_once_with(None)
+    sock.settimeout.assert_called_once_with(30.0)
     assert isinstance(captured["channel"], SocketChannel)
 
 
