@@ -12,6 +12,7 @@ from pyhttpd.adapters.logging.correlation_adapter import (
     get_correlation_id,
     set_correlation_id,
 )
+from pyhttpd.adapters.tls import establish_tls
 from pyhttpd.adapters.transport.chain_builder import build_worker_chain
 from pyhttpd.adapters.transport.channel import SocketChannel
 from pyhttpd.adapters.transport.context import WorkerContext
@@ -98,6 +99,13 @@ def _process_request(
 
 def _upgrade_read_timeout(context: WorkerContext) -> float | None:
     """Read/idle deadline for an upgraded (e.g. WebSocket) connection."""
+    if context.config is not None:
+        return context.config.socket_timeout
+    return None
+
+
+def _tls_handshake_timeout(context: WorkerContext) -> float | None:
+    """Bound the per-connection TLS handshake so a silent peer cannot pin a worker."""
     if context.config is not None:
         return context.config.socket_timeout
     return None
@@ -251,6 +259,11 @@ def handle_client(
     )
 
     try:
+        if context.tls_context is not None:
+            client_socket = establish_tls(
+                client_socket, context.tls_context, _tls_handshake_timeout(context)
+            )
+            resources.client_socket = client_socket
         protocol, seed = _negotiate_protocol(client_socket, context)
         if protocol == "h2":
             _run_http2(client_socket, seed, context, client_ip, max_body_bytes)

@@ -163,6 +163,7 @@ def test_worker_logs_lifecycle_events(caplog):
     context.cors_config = None
     context.rate_limiter = None
     context.connection_limiter = None
+    context.tls_context = None
 
     handle_client(client_sock, ("127.0.0.1", 54321), context)
 
@@ -204,6 +205,7 @@ def test_worker_logs_body_size_exceeded(caplog):
         context = MagicMock(spec=WorkerContext)
         context.lifecycle = MagicMock()
         context.lifecycle.is_draining.return_value = False
+        context.tls_context = None
 
         handle_client(client_sock, ("127.0.0.1", 54321), context)
 
@@ -225,6 +227,7 @@ def _draining_context():
     context = MagicMock(spec=WorkerContext)
     context.lifecycle = MagicMock()
     context.lifecycle.is_draining.return_value = True
+    context.tls_context = None
     return context
 
 
@@ -233,6 +236,7 @@ def _idle_context():
     context = MagicMock(spec=WorkerContext)
     context.lifecycle = MagicMock()
     context.lifecycle.is_draining.return_value = False
+    context.tls_context = None
     return context
 
 
