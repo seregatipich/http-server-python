@@ -4,8 +4,9 @@ import gzip
 import logging
 import mimetypes
 import os
+import tempfile
 from pathlib import Path
-from typing import Callable, Iterator, Optional
+from typing import BinaryIO, Callable, Iterator, Optional
 
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.cors_headers import apply_cors_headers
@@ -75,11 +76,35 @@ def _stream_file(
             yield chunk
 
 
-def _stream_range(
-    resolved_path: Path, byte_range: ByteRange, chunk_size: int = 65536
+def _stream_handle(
+    file_handle: BinaryIO, size: int, logger: Logger, chunk_size: int = 65536
+) -> Iterator[bytes]:
+    """Stream exactly ``size`` bytes from an already-open handle, then close it.
+
+    The handle is opened once at request time and its size taken from the same
+    descriptor, so the declared Content-Length always matches the bytes served
+    even if the path is atomically replaced concurrently (the descriptor keeps
+    the original inode).
+    """
+    logger.log(logging.DEBUG, "file_streaming_started")
+    remaining = size
+    try:
+        while remaining > 0:
+            chunk = file_handle.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            logger.log(logging.DEBUG, "file_chunk_sent", bytes=len(chunk))
+            yield chunk
+    finally:
+        file_handle.close()
+
+
+def _stream_range_handle(
+    file_handle: BinaryIO, byte_range: ByteRange, chunk_size: int = 65536
 ) -> Iterator[bytes]:
     remaining = byte_range.length
-    with open(resolved_path, "rb") as file_handle:
+    try:
         file_handle.seek(byte_range.start)
         while remaining > 0:
             chunk = file_handle.read(min(chunk_size, remaining))
@@ -87,6 +112,8 @@ def _stream_range(
                 break
             remaining -= len(chunk)
             yield chunk
+    finally:
+        file_handle.close()
 
 
 def _streaming_file_response(
@@ -156,7 +183,7 @@ def _not_modified_response(
 
 def _range_response(
     request: HttpRequest,
-    resolved_path: Path,
+    file_handle: BinaryIO,
     byte_range: ByteRange,
     headers: dict[str, str],
     file_size: int,
@@ -168,17 +195,17 @@ def _range_response(
         headers,
         b"",
         should_close(request.headers),
-        body_iter=_stream_range(resolved_path, byte_range),
+        body_iter=_stream_range_handle(file_handle, byte_range),
         content_length=byte_range.length,
     )
 
 
 def _gzip_response(
     request: HttpRequest,
-    resolved_path: Path,
+    file_handle: BinaryIO,
     headers: dict[str, str],
 ) -> HttpResponse:
-    compressed = gzip.compress(resolved_path.read_bytes())
+    compressed = gzip.compress(file_handle.read())
     headers = dict(headers)
     headers["Content-Encoding"] = "gzip"
     headers["Vary"] = "Accept-Encoding"
@@ -193,7 +220,7 @@ def _gzip_response(
 
 def _full_file_response(
     request: HttpRequest,
-    resolved_path: Path,
+    file_handle: BinaryIO,
     logger: Logger,
     headers: dict[str, str],
     file_size: int,
@@ -203,7 +230,7 @@ def _full_file_response(
         headers,
         b"",
         should_close(request.headers),
-        body_iter=_stream_file(resolved_path, logger),
+        body_iter=_stream_handle(file_handle, file_size, logger),
         content_length=file_size,
     )
 
@@ -225,7 +252,28 @@ def _get_file_response(
         logger.log(logging.INFO, "file_not_found", path=resolved_path.as_posix())
         raise NotFound("file not found")
 
-    stat_result = os.stat(resolved_path)
+    file_handle = open(resolved_path, "rb")  # pylint: disable=consider-using-with
+    handle_owned_by_response = False
+    try:
+        response, handle_owned_by_response = _build_file_response(
+            request, resolved_path, file_handle, logger, cors_config, options
+        )
+        return response
+    finally:
+        if not handle_owned_by_response:
+            file_handle.close()
+
+
+def _build_file_response(
+    request: HttpRequest,
+    resolved_path: Path,
+    file_handle: BinaryIO,
+    logger: Logger,
+    cors_config: Optional[CorsConfig],
+    options: FileServingOptions,
+) -> tuple[HttpResponse, bool]:
+    """Return the response and whether it now owns (and will close) the handle."""
+    stat_result = os.fstat(file_handle.fileno())
     file_size = stat_result.st_size
     content_type = _content_type_for_path(resolved_path, options)
     etag = compute_etag(file_size, stat_result.st_mtime_ns)
@@ -234,23 +282,50 @@ def _get_file_response(
     )
 
     if is_not_modified(etag, stat_result.st_mtime, request.headers):
-        return _not_modified_response(request, headers)
+        return _not_modified_response(request, headers), False
 
     range_header = request.headers.get("range", "")
     if range_header:
         parsed = parse_range(range_header, file_size)
         if isinstance(parsed, ByteRange):
-            return _range_response(request, resolved_path, parsed, headers, file_size)
+            return (
+                _range_response(request, file_handle, parsed, headers, file_size),
+                True,
+            )
         if parsed is not None:
             raise RangeNotSatisfiable(file_size)
 
     if _gzip_eligible(content_type, file_size, options) and accepts_gzip(
         request.headers
     ):
-        return _gzip_response(request, resolved_path, headers)
+        return _gzip_response(request, file_handle, headers), False
 
     logger.log(logging.INFO, "file_read_complete", path=resolved_path.as_posix())
-    return _full_file_response(request, resolved_path, logger, headers, file_size)
+    return _full_file_response(request, file_handle, logger, headers, file_size), True
+
+
+def _atomic_write(resolved_path: Path, data: bytes) -> None:
+    """Write ``data`` to ``resolved_path`` atomically via a temp file + os.replace.
+
+    In-place ``open(path, "wb")`` truncates the live inode, so a concurrent
+    reader streaming that file sees torn bytes and a body that no longer matches
+    its Content-Length. Writing to a sibling temp file and renaming makes the
+    swap atomic: readers see either the whole old file or the whole new one.
+    """
+    descriptor, temp_name = tempfile.mkstemp(
+        dir=resolved_path.parent, prefix=".pyhttpd-"
+    )
+    temp_path = Path(temp_name)
+    committed = False
+    try:
+        with os.fdopen(descriptor, "wb") as temp_handle:
+            temp_handle.write(data)
+        os.chmod(temp_path, 0o644)
+        os.replace(temp_path, resolved_path)
+        committed = True
+    finally:
+        if not committed:
+            temp_path.unlink(missing_ok=True)
 
 
 def _write_file_response(
@@ -261,8 +336,7 @@ def _write_file_response(
     status_line: str,
 ) -> HttpResponse:
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(resolved_path, "wb") as file_handle:
-        file_handle.write(request.body)
+    _atomic_write(resolved_path, request.body)
     logger.log(
         logging.INFO,
         "file_write_complete",
