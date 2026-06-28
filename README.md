@@ -272,8 +272,10 @@ handshake, replies with the `Sec-WebSocket-Accept` digest, then echoes text and
 binary messages, answers pings with pongs, reassembles fragmented messages, and
 performs the closing handshake. Client frames must be masked and text is
 UTF-8-validated (a violation closes with the appropriate status code); a
-graceful shutdown closes open sockets with `1001 Going Away`. The endpoint is
-off by default, so `/ws` returns 404 unless enabled.
+graceful shutdown closes open sockets with `1001 Going Away`. Upgraded sockets
+carry a read/idle deadline (the `--socket-timeout` value), so an idle or slow
+peer cannot hold a worker (and its connection slot) open indefinitely. The
+endpoint is off by default, so `/ws` returns 404 unless enabled.
 
 ## Directory autoindex
 
@@ -301,6 +303,14 @@ the TLS SNI extension, falling back to the default cert. `--tls-client-ca` plus
 certificate are rejected at the handshake. With `--auth-mode client-cert`, the
 verified certificate's Common Name (or DNS SAN) becomes the principal identity
 and is mapped to scopes via `--auth-roles`, so RBAC applies to cert identities.
+
+These options are validated at startup: the SNI/client-CA/require-client-cert
+flags require `--cert`/`--key` (otherwise the server would silently run
+plaintext), and `--tls-require-client-cert` requires `--tls-client-ca`
+(otherwise client-cert verification would fail open). A misconfiguration is
+rejected with a clear error instead of starting an insecure server. The TLS
+handshake runs in each connection's worker thread, so a slow or silent peer
+cannot stall the accept loop for other clients.
 
 ## Virtual hosts
 
