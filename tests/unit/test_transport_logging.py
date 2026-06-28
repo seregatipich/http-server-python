@@ -396,6 +396,65 @@ def test_accept_loop_rejects_when_connection_limit_reached(
     assert warning_record.client == "127.0.0.1:12345"
 
 
+def test_shutdown_forces_exit_when_workers_remain(
+    mock_args, mock_config, mock_lifecycle, caplog
+):
+    """Grace expiring with live non-daemon workers must force-exit, not hang."""
+    caplog.set_level(logging.WARNING)
+
+    server_socket = MagicMock()
+    server_socket.accept.side_effect = OSError("Stop loop")
+    mock_lifecycle.should_stop.side_effect = None
+    mock_lifecycle.should_stop.return_value = True
+    mock_lifecycle.wait_for_workers.return_value = False
+
+    connection_limiter = ConnectionLimiter(
+        mock_args.max_connections, mock_args.max_connections_per_ip
+    )
+    handler_context = WorkerContext(directory=mock_args.directory)
+
+    with patch("os._exit") as mock_exit:
+        run_server(
+            server_socket,
+            mock_args,
+            mock_config,
+            mock_lifecycle,
+            handler_context,
+            connection_limiter,
+        )
+
+    mock_exit.assert_called_once_with(0)
+    assert any(getattr(r, "event", None) == "shutdown_forced" for r in caplog.records)
+
+
+def test_shutdown_does_not_force_exit_on_clean_drain(
+    mock_args, mock_config, mock_lifecycle
+):
+    """A drain that completes within grace must exit normally, never force-exit."""
+    server_socket = MagicMock()
+    server_socket.accept.side_effect = OSError("Stop loop")
+    mock_lifecycle.should_stop.side_effect = None
+    mock_lifecycle.should_stop.return_value = True
+    mock_lifecycle.wait_for_workers.return_value = True
+
+    connection_limiter = ConnectionLimiter(
+        mock_args.max_connections, mock_args.max_connections_per_ip
+    )
+    handler_context = WorkerContext(directory=mock_args.directory)
+
+    with patch("os._exit") as mock_exit:
+        run_server(
+            server_socket,
+            mock_args,
+            mock_config,
+            mock_lifecycle,
+            handler_context,
+            connection_limiter,
+        )
+
+    mock_exit.assert_not_called()
+
+
 def test_accept_loop_survives_send_failure_on_limit_rejection(
     mock_args, mock_config, mock_lifecycle, caplog
 ):

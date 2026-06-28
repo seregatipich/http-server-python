@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 import socket
 import threading
 
@@ -154,7 +155,16 @@ def _finish_shutdown(
             "grace_seconds": config.shutdown_grace_seconds,
         },
     )
-    lifecycle.wait_for_workers(config.shutdown_grace_seconds)
+    completed = lifecycle.wait_for_workers(config.shutdown_grace_seconds)
+    if not completed:
+        ACCEPT_LOGGER.warning(
+            "Grace period expired; forcing shutdown and dropping active connections",
+            extra={
+                "event": "shutdown_forced",
+                "grace_seconds": config.shutdown_grace_seconds,
+            },
+        )
+        os._exit(0)
     ACCEPT_LOGGER.info("Server shutdown complete", extra={"event": "server_stopped"})
 
 
