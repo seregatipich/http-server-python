@@ -29,7 +29,7 @@ def build_tls_context(args: argparse.Namespace) -> ssl.SSLContext | None:
         return None
     try:
         return _build_tls_context(args)
-    except (ssl.SSLError, OSError) as error:
+    except (ssl.SSLError, OSError, ValueError) as error:
         SOCKET_LOGGER.critical(
             "Failed to load TLS certificates", extra={"error": str(error)}
         )
@@ -63,7 +63,7 @@ def _build_tls_context(args: argparse.Namespace) -> ssl.SSLContext:
         def _select(
             sslsocket: ssl.SSLSocket, servername: str, _context: ssl.SSLContext
         ) -> None:
-            chosen = sni_contexts.get(servername)
+            chosen = sni_contexts.get((servername or "").lower())
             if chosen is not None:
                 sslsocket.context = chosen
 
@@ -91,7 +91,7 @@ def _sni_contexts(args: argparse.Namespace) -> Dict[str, ssl.SSLContext]:
     contexts: Dict[str, ssl.SSLContext] = {}
     for spec in getattr(args, "tls_sni", None) or []:
         host, cert, key = _parse_sni_spec(spec)
-        contexts[host] = _server_context(cert, key, args)
+        contexts[host.lower()] = _server_context(cert, key, args)
     return contexts
 
 

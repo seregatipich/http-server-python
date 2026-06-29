@@ -4,18 +4,36 @@ import os
 import socket
 import ssl
 import threading
+from unittest.mock import patch
 
 from pyhttpd.adapters.config import parse_cli_args
-from pyhttpd.adapters.tls import build_tls_context, create_server_socket, establish_tls
+from pyhttpd.adapters.tls import (
+    _sni_contexts,
+    build_tls_context,
+    create_server_socket,
+    establish_tls,
+)
 
 CERT = os.path.abspath("certs/cert.pem")
 KEY = os.path.abspath("certs/key.pem")
 
 
-def _tls_args():
-    return parse_cli_args(
-        ["--host", "127.0.0.1", "--port", "0", "--cert", CERT, "--key", KEY]
-    )
+def _tls_args(extra=None):
+    argv = ["--host", "127.0.0.1", "--port", "0", "--cert", CERT, "--key", KEY]
+    if extra:
+        argv.extend(extra)
+    return parse_cli_args(argv)
+
+
+def test_sni_contexts_keys_are_lowercased():
+    contexts = _sni_contexts(_tls_args(["--tls-sni", f"Example.COM:{CERT}:{KEY}"]))
+    assert "example.com" in contexts
+
+
+def test_build_tls_context_exits_on_malformed_sni():
+    with patch("pyhttpd.adapters.tls.sys.exit") as mock_exit:
+        build_tls_context(_tls_args(["--tls-sni", "this-is-not-valid"]))
+    mock_exit.assert_called_with(1)
 
 
 def test_listener_is_plain_even_with_tls_enabled():
