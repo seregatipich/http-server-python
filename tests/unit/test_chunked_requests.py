@@ -144,8 +144,14 @@ def test_rejects_leading_whitespace_in_chunk_size() -> None:
         read_chunked_body(client, b"", max_body_bytes=1024)
 
 
-def test_tolerates_whitespace_before_chunk_extension() -> None:
+def test_rejects_whitespace_before_chunk_extension() -> None:
     client = FakeSocket([b"3 ;ext\r\nabc\r\n0\r\n\r\n"])
+    with pytest.raises(ValueError):
+        read_chunked_body(client, b"", max_body_bytes=1024)
+
+
+def test_accepts_chunk_extension_without_whitespace() -> None:
+    client = FakeSocket([b"3;ext\r\nabc\r\n0\r\n\r\n"])
     body, _ = read_chunked_body(client, b"", max_body_bytes=1024)
     assert body == b"abc"
 

@@ -22,10 +22,16 @@ def _b64url_decode(segment: str) -> bytes:
         raise InvalidToken("malformed base64url segment") from error
 
 
+def _reject_non_finite(_constant: str) -> float:
+    # json.loads accepts Infinity/-Infinity/NaN by default; a non-finite exp/nbf
+    # would make a token effectively never expire, so reject the literals.
+    raise InvalidToken("non-finite number literal in token")
+
+
 def _decode_json(segment: str) -> dict:
     try:
-        decoded = json.loads(_b64url_decode(segment))
-    except json.JSONDecodeError as error:
+        decoded = json.loads(_b64url_decode(segment), parse_constant=_reject_non_finite)
+    except (ValueError, RecursionError) as error:
         raise InvalidToken("invalid JSON segment") from error
     if not isinstance(decoded, dict):
         raise InvalidToken("segment is not a JSON object")

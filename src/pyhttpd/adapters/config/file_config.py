@@ -21,10 +21,27 @@ def apply_overlay(
             setattr(namespace, key, value)
 
 
+def record_explicit_flags(namespace: Namespace, argv: List[str]) -> None:
+    """Record which dests were set explicitly on the CLI, for reload precedence."""
+    namespace.explicitly_passed = frozenset(
+        dest for dest in vars(namespace) if _explicitly_passed(argv, dest)
+    )
+
+
 def reapply_overlay(namespace: Namespace, overlay: Dict[str, Any]) -> None:
-    """Re-apply file values onto the namespace (used on SIGHUP reload)."""
+    """Re-apply file values onto the namespace (used on SIGHUP reload).
+
+    Flags passed explicitly on the CLI keep precedence over the file across a
+    reload, matching startup behavior; without this a SIGHUP would silently
+    overwrite an operator's explicit command-line value (LIFE-03).
+    """
+    explicit: frozenset[str] = getattr(namespace, "explicitly_passed", frozenset())
     for key, value in overlay.items():
-        if hasattr(namespace, key):
+        if (
+            key != "explicitly_passed"
+            and hasattr(namespace, key)
+            and key not in explicit
+        ):
             setattr(namespace, key, value)
 
 

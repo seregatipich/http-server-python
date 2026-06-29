@@ -26,6 +26,7 @@ from pyhttpd.domain.errors import (
     RequestTimeout,
     ServiceUnavailable,
     Unauthorized,
+    UpgradeRequired,
 )
 from pyhttpd.domain.file_metadata import (
     FileMetadata,
@@ -106,6 +107,7 @@ __all__ = [
     "LifecycleState",
     "Logger",
     "MethodNotAllowed",
+    "UpgradeRequired",
     "NotFound",
     "PhaseTimeouts",
     "Principal",

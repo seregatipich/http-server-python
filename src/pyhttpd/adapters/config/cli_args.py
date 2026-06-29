@@ -5,7 +5,11 @@ import os
 from dataclasses import dataclass
 
 from pyhttpd.adapters.config.env import _env_bool, _env_int, _env_list, _env_str
-from pyhttpd.adapters.config.file_config import apply_overlay, load_config_file
+from pyhttpd.adapters.config.file_config import (
+    apply_overlay,
+    load_config_file,
+    record_explicit_flags,
+)
 from pyhttpd.domain import DEFAULT_AUTH_MODE, DEFAULT_MAX_BODY_BYTES
 
 MAX_BODY_BYTES = _env_int("HTTP_SERVER_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)
@@ -427,6 +431,7 @@ def parse_cli_args(argv: list[str]) -> argparse.Namespace:
     _add_proxy_args(parser)
     _add_file_serving_args(parser)
     namespace = parser.parse_args(argv)
+    record_explicit_flags(namespace, argv)
     if namespace.config:
         apply_overlay(namespace, load_config_file(namespace.config), argv)
     return namespace

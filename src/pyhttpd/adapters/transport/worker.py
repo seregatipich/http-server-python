@@ -169,7 +169,9 @@ def _run_http2(
             client_principal=_client_certificate_principal(client_socket, context),
         )
 
-    Http2Connection(SocketChannel(client_socket), chain, make_context).serve(seed)
+    Http2Connection(
+        SocketChannel(client_socket), chain, make_context, max_body_bytes
+    ).serve(seed)
 
 
 def _process_client_requests(

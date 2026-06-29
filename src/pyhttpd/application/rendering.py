@@ -30,6 +30,7 @@ from pyhttpd.domain import (
     RequestTimeout,
     ServiceUnavailable,
     Unauthorized,
+    UpgradeRequired,
     should_close,
 )
 
@@ -243,6 +244,18 @@ def entity_too_large_response(security_headers: dict[str, str]) -> HttpResponse:
     return _basic_response("HTTP/1.1 413 Payload Too Large", security_headers)
 
 
+def upgrade_required_response(
+    websocket_version: str, security_headers: dict[str, str]
+) -> HttpResponse:
+    """Produce a 426 response advertising the supported WebSocket version."""
+    return _basic_response(
+        "HTTP/1.1 426 Upgrade Required",
+        security_headers,
+        b"Upgrade Required",
+        {"Sec-WebSocket-Version": websocket_version},
+    )
+
+
 def rate_limited_response(
     decision: RateLimitDecision,
     request: Optional[HttpRequest],
@@ -286,7 +299,9 @@ def draining_response(security_headers: dict[str, str]) -> HttpResponse:
 
 
 def healthz_response(
-    is_draining: bool, security_headers: dict[str, str]
+    is_draining: bool,
+    security_headers: dict[str, str],
+    close_connection: bool = False,
 ) -> HttpResponse:
     """Produce a health check response based on server state."""
     if is_draining:
@@ -294,7 +309,7 @@ def healthz_response(
     return _basic_response(
         "HTTP/1.1 200 OK",
         security_headers,
-        close_connection=False,
+        close_connection=close_connection,
     )
 
 
@@ -409,7 +424,7 @@ class ErrorMapper:
         return apply_error_format(response, error_format, request_id)
 
     @staticmethod
-    def _build(  # pylint: disable=too-many-return-statements
+    def _build(  # pylint: disable=too-many-return-statements,too-many-branches
         error: HttpError,
         request: Optional[HttpRequest],
         cors_config: Optional[CorsConfig],
@@ -432,6 +447,8 @@ class ErrorMapper:
             return entity_too_large_response(SECURITY_HEADERS)
         if isinstance(error, RequestTimeout):
             return request_timeout_response(SECURITY_HEADERS)
+        if isinstance(error, UpgradeRequired):
+            return upgrade_required_response(error.websocket_version, SECURITY_HEADERS)
         if isinstance(error, RangeNotSatisfiable):
             return range_not_satisfiable_response(
                 error.file_size, request, cors_config, SECURITY_HEADERS

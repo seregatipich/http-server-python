@@ -152,3 +152,18 @@ def test_draining_sends_going_away_close() -> None:
     opcode, payload = _parse_server_frame(bytes(channel.outbound))
     assert opcode == OPCODE_CLOSE
     assert struct.unpack("!H", payload[:2])[0] == 1001
+
+
+def test_invalid_close_payload_closes_with_1002() -> None:
+    # A 1-byte close payload is malformed; the server must reply Close 1002.
+    channel = _run(_client_frame(OPCODE_CLOSE, b"\x03"))
+    opcode, payload = _parse_server_frame(bytes(channel.outbound))
+    assert opcode == OPCODE_CLOSE
+    assert struct.unpack("!H", payload[:2])[0] == 1002
+
+
+def test_valid_close_payload_is_echoed() -> None:
+    channel = _run(_client_frame(OPCODE_CLOSE, struct.pack("!H", 1000) + b"bye"))
+    opcode, payload = _parse_server_frame(bytes(channel.outbound))
+    assert opcode == OPCODE_CLOSE
+    assert payload == struct.pack("!H", 1000) + b"bye"

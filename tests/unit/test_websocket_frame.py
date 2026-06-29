@@ -11,6 +11,7 @@ from pyhttpd.domain.websocket import (
     compute_accept,
     decode_frame,
     encode_frame,
+    is_valid_close_payload,
     is_websocket_upgrade,
 )
 
@@ -71,6 +72,43 @@ def test_decode_round_trips_leftover_for_pipelined_frames() -> None:
     assert decoded is not None
     _frame, consumed = decoded
     assert MASKED_HELLO[consumed:] == b""
+
+
+def test_decode_rejects_reserved_data_opcode() -> None:
+    # Opcode 0x3 is a reserved non-control opcode and must fail the connection.
+    with pytest.raises(ValueError):
+        decode_frame(bytes([0x83, 0x80, 0x00, 0x00, 0x00, 0x00]))
+
+
+def test_decode_rejects_reserved_control_opcode() -> None:
+    # Opcode 0xB is a reserved control opcode and must fail the connection.
+    with pytest.raises(ValueError):
+        decode_frame(bytes([0x8B, 0x80, 0x00, 0x00, 0x00, 0x00]))
+
+
+def test_is_valid_close_payload_accepts_empty_and_valid_code() -> None:
+    assert is_valid_close_payload(b"") is True
+    assert is_valid_close_payload(struct.pack("!H", 1000)) is True
+    assert is_valid_close_payload(struct.pack("!H", 3000) + b"bye") is True
+
+
+def test_is_valid_close_payload_rejects_short_invalid_or_nonutf8() -> None:
+    assert is_valid_close_payload(b"\x03") is False  # 1-byte payload
+    assert is_valid_close_payload(struct.pack("!H", 1005)) is False  # reserved code
+    assert (
+        is_valid_close_payload(struct.pack("!H", 1000) + b"\xff") is False
+    )  # bad utf8
+
+
+def test_is_websocket_upgrade_rejects_malformed_key() -> None:
+    assert not is_websocket_upgrade(
+        {
+            "upgrade": "websocket",
+            "connection": "Upgrade",
+            "sec-websocket-version": "13",
+            "sec-websocket-key": "not-16-bytes",
+        }
+    )
 
 
 def test_compute_accept_matches_rfc_example() -> None:
