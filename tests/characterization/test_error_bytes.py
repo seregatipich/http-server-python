@@ -16,6 +16,14 @@ pytestmark = pytest.mark.integration
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]+$")
 RATE_LIMIT_RESET_PATTERN = re.compile(r"^\d+(\.\d+)?$")
 
+# Over plaintext, HSTS is intentionally omitted (RFC 6797 7.2); these tests run
+# against a plaintext server, so the expected set excludes it.
+PLAINTEXT_SECURITY_HEADERS = {
+    name: value
+    for name, value in SECURITY_HEADERS.items()
+    if name != "Strict-Transport-Security"
+}
+
 
 def assert_request_id(headers: dict[str, str]) -> None:
     """Pin the X-Request-ID header by presence and shape, never its value."""
@@ -27,8 +35,9 @@ def assert_request_id(headers: dict[str, str]) -> None:
 def assert_security_headers(headers: dict[str, str]) -> None:
     """Pin the baseline security headers by exact name and value."""
 
-    for name, expected in SECURITY_HEADERS.items():
+    for name, expected in PLAINTEXT_SECURITY_HEADERS.items():
         assert headers[name] == expected
+    assert "Strict-Transport-Security" not in headers
 
 
 def assert_empty_body_envelope(
@@ -42,7 +51,7 @@ def assert_empty_body_envelope(
     assert headers["Content-Length"] == "0"
     assert headers["Connection"] == "close"
     assert set(headers) == {
-        *SECURITY_HEADERS,
+        *PLAINTEXT_SECURITY_HEADERS,
         *extra_headers,
         "X-Request-ID",
         "Content-Length",
@@ -240,7 +249,7 @@ def test_rate_limited_429_bytes(limited_server_process) -> None:
         "RateLimit-Limit",
         "RateLimit-Remaining",
         "RateLimit-Reset",
-        *SECURITY_HEADERS,
+        *PLAINTEXT_SECURITY_HEADERS,
         "X-Request-ID",
         "Content-Length",
     }
@@ -305,7 +314,7 @@ def test_connection_limited_503_bytes(limited_server_process) -> None:
     assert "Access-Control-Allow-Origin" not in headers
     assert set(headers) == {
         "Retry-After",
-        *SECURITY_HEADERS,
+        *PLAINTEXT_SECURITY_HEADERS,
         "Content-Length",
         "Connection",
     }

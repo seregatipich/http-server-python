@@ -218,11 +218,17 @@ def _create_proxy_targets(args: argparse.Namespace) -> tuple[ProxyTarget, ...]:
 
 
 def _create_phase_timeouts(args: argparse.Namespace) -> PhaseTimeouts:
-    """Create per-phase request timeouts from CLI arguments."""
+    """Create per-phase request timeouts, each bounded by the socket timeout.
+
+    --socket-timeout is the overall per-request processing bound; a phase
+    deadline must never exceed it, otherwise a slow client could hold a worker
+    far longer than the configured socket timeout (SLOW-01).
+    """
+    cap = args.socket_timeout
     return PhaseTimeouts(
-        header_read_seconds=args.header_read_timeout,
-        body_read_seconds=args.body_read_timeout,
-        handler_seconds=args.handler_timeout,
+        header_read_seconds=min(args.header_read_timeout, cap),
+        body_read_seconds=min(args.body_read_timeout, cap),
+        handler_seconds=min(args.handler_timeout, cap),
     )
 
 

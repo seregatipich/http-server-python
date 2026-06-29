@@ -88,7 +88,9 @@ def test_healthz_endpoint_returns_200_when_healthy(base_url: str) -> None:
     response = requests.get(f"{base_url}/healthz", timeout=5)
     assert response.status_code == 200
     assert response.content == b""
-    assert "strict-transport-security" in response.headers
+    # HSTS is omitted over plaintext (RFC 6797 7.2); other security headers remain.
+    assert "strict-transport-security" not in response.headers
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 def test_cors_simple_request_with_origin(base_url: str) -> None:

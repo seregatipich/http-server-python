@@ -280,9 +280,17 @@ def handle_client(
                 max_body_bytes,
                 seed,
             )
+    except TimeoutError as error:
+        WORKER_LOGGER.info(
+            "Client connection timed out",
+            extra={
+                "event": "client_timeout",
+                "client": client_addr_str,
+                "error_type": type(error).__name__,
+            },
+        )
     except (
         ConnectionError,
-        TimeoutError,
         OSError,
         UnicodeDecodeError,
     ) as error:
