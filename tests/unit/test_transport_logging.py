@@ -142,6 +142,45 @@ def test_accept_loop_logs_client_accepted(
     assert accepted_record.client == "127.0.0.1:12345"
 
 
+def test_drain_pending_consumes_buffered_bytes():
+    """Draining buffered request bytes lets the client read a just-sent rejection."""
+    from pyhttpd.adapters.transport.request_reader import _drain_pending
+
+    sock = MagicMock()
+    sock.recv.side_effect = [b"unsent oversized header bytes", b""]
+
+    _drain_pending(sock)
+
+    sock.setblocking.assert_called_once_with(False)
+    assert sock.recv.call_count >= 2
+
+
+def test_idle_timeout_logged_at_info_not_error(caplog):
+    """A socket timeout with no request in flight is routine: INFO, not ERROR."""
+    logging.getLogger("http_server").setLevel(logging.INFO)
+    caplog.set_level(logging.INFO)
+
+    client_sock = MagicMock()
+    client_sock.recv.side_effect = socket.timeout("timed out")
+
+    context = MagicMock(spec=WorkerContext)
+    context.tls_context = None
+    context.enable_http2 = False
+    context.config = MagicMock(socket_timeout=1)
+    context.phase_timeouts = None
+    context.lifecycle = MagicMock()
+    context.lifecycle.is_draining.return_value = False
+    context.allow_chunked_requests = False
+    context.expect_continue = False
+    context.error_format = "text"
+
+    handle_client(client_sock, ("127.0.0.1", 54321), context)
+
+    events = [getattr(r, "event", None) for r in caplog.records]
+    assert "client_timeout" in events
+    assert "connection_error" not in events
+
+
 def test_worker_logs_lifecycle_events(caplog):
     """Verify request_started, request_complete, socket_closed events."""
     # Set root http_server logger to DEBUG so all children (transport, io) log DEBUG

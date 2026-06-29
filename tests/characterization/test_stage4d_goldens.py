@@ -62,6 +62,9 @@ def test_unexpected_error_returns_500() -> None:
 
     assert status_line == "HTTP/1.1 500 Internal Server Error"
     for name, expected in SECURITY_HEADERS.items():
+        if name == "Strict-Transport-Security":
+            assert name not in headers  # HSTS omitted over plaintext (RFC 6797 7.2)
+            continue
         assert headers[name] == expected
     assert headers["Content-Length"] == "0"
     assert headers["Connection"] == "close"
@@ -86,6 +89,9 @@ def test_index_traversal_forbidden_403() -> None:
 
     assert status_line == "HTTP/1.1 403 Forbidden"
     for name, expected in SECURITY_HEADERS.items():
+        if name == "Strict-Transport-Security":
+            assert name not in headers  # HSTS omitted over plaintext (RFC 6797 7.2)
+            continue
         assert headers[name] == expected
     assert headers["Content-Length"] == "0"
     assert body == b""

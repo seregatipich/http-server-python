@@ -2,6 +2,7 @@
 
 import logging
 import socket
+import ssl
 import time
 import urllib.parse
 from typing import NamedTuple, Optional, Tuple
@@ -317,8 +318,11 @@ def receive_request(
     )
 
 
-def _response_headers(response: HttpResponse) -> dict[str, str]:
+def _response_headers(response: HttpResponse, is_tls: bool = True) -> dict[str, str]:
     headers = dict(response.headers)
+    if not is_tls:
+        # RFC 6797 7.2: HSTS MUST NOT be advertised over a non-secure transport.
+        headers.pop("Strict-Transport-Security", None)
     correlation_id = get_correlation_id()
     if correlation_id:
         headers["X-Request-ID"] = correlation_id
@@ -357,7 +361,10 @@ def _send_chunked_response(
 
 def send_response(client_socket: socket.socket, response: HttpResponse) -> None:
     """Serialize and send the HTTP response over the socket."""
-    header_block = _header_block(response.status_line, _response_headers(response))
+    is_tls = isinstance(client_socket, ssl.SSLSocket)
+    header_block = _header_block(
+        response.status_line, _response_headers(response, is_tls)
+    )
     if response.use_chunked and response.body_iter is not None:
         _send_chunked_response(client_socket, header_block, response)
     elif response.body_iter is not None:

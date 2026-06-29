@@ -126,6 +126,27 @@ def test_gzip_variant_uses_a_distinct_etag(ctx, tmp_path):
     assert gzipped.headers["ETag"] != identity.headers["ETag"]
 
 
+def test_gzip_response_is_streamed_not_buffered(ctx, tmp_path):
+    """gzip responses stream (chunked) instead of buffering the whole file."""
+    import gzip as gzip_module
+
+    payload = ("hello world " * 100).encode()
+    (tmp_path / "d.txt").write_bytes(payload)
+    options = FileServingOptions(gzip=True, gzip_min_bytes=1)
+    handler = make_files_handler(
+        str(tmp_path), RecordingLogger(), cors_config=None, options=options
+    )
+    response = handler(
+        make_request(path="/files/d.txt", headers={"accept-encoding": "gzip"}), ctx
+    )
+    assert response.headers["Content-Encoding"] == "gzip"
+    assert response.use_chunked is True
+    assert response.content_length is None
+    assert response.body == b""
+    assert response.body_iter is not None
+    assert gzip_module.decompress(b"".join(response.body_iter)) == payload
+
+
 def test_if_range_mismatch_serves_full_content(ctx, tmp_path):
     """A non-matching If-Range must serve the full 200, not a 206 with bad data."""
     (tmp_path / "d.bin").write_bytes(b"0123456789")

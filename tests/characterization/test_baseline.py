@@ -13,6 +13,10 @@ def _assert_security_headers(headers: requests.structures.CaseInsensitiveDict) -
     """Assert the baseline security headers are present with their exact values."""
 
     for name, expected in SECURITY_HEADERS.items():
+        if name == "Strict-Transport-Security":
+            # HSTS is omitted over plaintext (RFC 6797 7.2); this server is HTTP.
+            assert name not in headers
+            continue
         assert headers.get(name) == expected
 
 

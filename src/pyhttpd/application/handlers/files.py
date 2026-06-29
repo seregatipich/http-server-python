@@ -1,11 +1,11 @@
 """Handlers for static file serving and the sandbox index."""
 
 import errno
-import gzip
 import logging
 import mimetypes
 import os
 import tempfile
+import zlib
 from pathlib import Path
 from typing import BinaryIO, Callable, Iterator, Optional
 
@@ -228,12 +228,35 @@ def _range_response(
     )
 
 
+def _stream_gzip_handle(
+    file_handle: BinaryIO, chunk_size: int = 65536
+) -> Iterator[bytes]:
+    """Compress an already-open handle incrementally, then close it.
+
+    Streaming through zlib avoids holding the whole file (and its compressed
+    copy) in memory, so a large file cannot be a memory-amplification lever.
+    """
+    compressor = zlib.compressobj(level=6, wbits=31)
+    try:
+        while True:
+            data = file_handle.read(chunk_size)
+            if not data:
+                break
+            chunk = compressor.compress(data)
+            if chunk:
+                yield chunk
+        tail = compressor.flush()
+        if tail:
+            yield tail
+    finally:
+        file_handle.close()
+
+
 def _gzip_response(
     request: HttpRequest,
     file_handle: BinaryIO,
     headers: dict[str, str],
 ) -> HttpResponse:
-    compressed = gzip.compress(file_handle.read())
     headers = dict(headers)
     headers["Content-Encoding"] = "gzip"
     headers["Vary"] = "Accept-Encoding"
@@ -244,9 +267,10 @@ def _gzip_response(
     return HttpResponse(
         "HTTP/1.1 200 OK",
         headers,
-        compressed,
+        b"",
         should_close(request.headers),
-        content_length=len(compressed),
+        body_iter=_stream_gzip_handle(file_handle),
+        use_chunked=True,
     )
 
 
@@ -332,7 +356,7 @@ def _build_file_response(
     if _gzip_eligible(content_type, file_size, options) and accepts_gzip(
         request.headers
     ):
-        return _gzip_response(request, file_handle, headers), False
+        return _gzip_response(request, file_handle, headers), True
 
     logger.log(logging.INFO, "file_read_complete", path=resolved_path.as_posix())
     return _full_file_response(request, file_handle, logger, headers, file_size), True
