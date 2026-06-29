@@ -52,10 +52,10 @@ class TokenBucketLimiter:
         return min(self._burst_capacity, tokens + refill)
 
     def _reset_ns(self, state: BucketState, now_ns: int) -> int:
-        elapsed_since_refill = now_ns - state.last_refill_ns
-        return (
-            self._window_ns - (elapsed_since_refill % self._window_ns)
-        ) % self._window_ns
+        # Time until the next window boundary, in (0, window]. A fresh bucket
+        # (elapsed % window == 0) has a full window remaining, not 0.
+        elapsed_since_refill = max(0, now_ns - state.last_refill_ns)
+        return self._window_ns - (elapsed_since_refill % self._window_ns)
 
     def _decision(
         self,

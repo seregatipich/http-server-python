@@ -299,7 +299,9 @@ def draining_response(security_headers: dict[str, str]) -> HttpResponse:
 
 
 def healthz_response(
-    is_draining: bool, security_headers: dict[str, str]
+    is_draining: bool,
+    security_headers: dict[str, str],
+    close_connection: bool = False,
 ) -> HttpResponse:
     """Produce a health check response based on server state."""
     if is_draining:
@@ -307,7 +309,7 @@ def healthz_response(
     return _basic_response(
         "HTTP/1.1 200 OK",
         security_headers,
-        close_connection=False,
+        close_connection=close_connection,
     )
 
 

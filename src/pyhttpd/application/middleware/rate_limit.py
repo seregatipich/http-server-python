@@ -28,27 +28,33 @@ class RateLimitOutcome(Enum):
 
 
 def classify(decision: RateLimitDecision) -> RateLimitOutcome:
-    """Classify a decision as allowed, dry-run, or enforced."""
-    if decision.allowed:
-        return RateLimitOutcome.ALLOWED
+    """Classify a decision as allowed, dry-run, or enforced.
+
+    A dry-run breach is allowed through (so traffic is not blocked) but still
+    carries ``dry_run=True``; checking that first ensures the breach is reported
+    instead of being silently treated as a normal allowed request.
+    """
     if decision.dry_run:
         return RateLimitOutcome.DRY_RUN
+    if decision.allowed:
+        return RateLimitOutcome.ALLOWED
     return RateLimitOutcome.ENFORCED
 
 
-def _log_enforced(logger: Logger, client_key: str, decision: RateLimitDecision) -> None:
+def _log_breach(
+    logger: Logger, event: str, client_key: str, decision: RateLimitDecision
+) -> None:
     logger.log(
         logging.WARNING,
-        "rate_limit_enforced",
+        event,
         client=client_key,
         limit_type="ip",
         limit=decision.limit,
         window_seconds=decision.window_seconds,
         rate_limit_headers={
-            "Retry-After": decision.headers.get("Retry-After"),
-            "X-RateLimit-Limit": decision.headers.get("X-RateLimit-Limit"),
-            "X-RateLimit-Remaining": decision.headers.get("X-RateLimit-Remaining"),
-            "X-RateLimit-Reset": decision.headers.get("X-RateLimit-Reset"),
+            "RateLimit-Limit": decision.headers.get("RateLimit-Limit"),
+            "RateLimit-Remaining": decision.headers.get("RateLimit-Remaining"),
+            "RateLimit-Reset": decision.headers.get("RateLimit-Reset"),
         },
     )
 
@@ -66,11 +72,14 @@ def make_rate_limit_middleware(
     ) -> HttpResponse:
         client_key = client_key_of(request, ctx)
         decision = rate_limiter.consume(client_key)
-        if classify(decision) is RateLimitOutcome.ENFORCED:
-            _log_enforced(logger, client_key, decision)
+        outcome = classify(decision)
+        if outcome is RateLimitOutcome.ENFORCED:
+            _log_breach(logger, "rate_limit_enforced", client_key, decision)
             if metrics_sink is not None:
                 metrics_sink.inc_rejection("rate_limit")
             raise RateLimited(decision)
+        if outcome is RateLimitOutcome.DRY_RUN:
+            _log_breach(logger, "rate_limit_dry_run", client_key, decision)
         ctx.rate_decision = decision
         return nxt(request, ctx)
 
