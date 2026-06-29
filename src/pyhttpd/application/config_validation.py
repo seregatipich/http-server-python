@@ -25,6 +25,30 @@ def _validate_tls(args: argparse.Namespace) -> list[str]:
     for path in (args.cert, args.key):
         if path and not os.access(path, os.R_OK):
             errors.append(f"TLS file is not readable: {path}")
+    errors.extend(_validate_tls_dependencies(args))
+    return errors
+
+
+def _validate_tls_dependencies(args: argparse.Namespace) -> list[str]:
+    errors = []
+    tls_enabled = bool(args.cert and args.key)
+    tls_dependent = {
+        "--tls-sni": bool(getattr(args, "tls_sni", None)),
+        "--tls-client-ca": bool(getattr(args, "tls_client_ca", None)),
+        "--tls-require-client-cert": bool(
+            getattr(args, "tls_require_client_cert", False)
+        ),
+    }
+    if not tls_enabled:
+        for flag, requested in tls_dependent.items():
+            if requested:
+                errors.append(f"{flag} requires --cert and --key")
+        return errors
+    if (
+        tls_dependent["--tls-require-client-cert"]
+        and not tls_dependent["--tls-client-ca"]
+    ):
+        errors.append("--tls-require-client-cert requires --tls-client-ca")
     return errors
 
 

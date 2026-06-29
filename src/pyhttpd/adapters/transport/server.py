@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 import socket
 import threading
 
@@ -96,6 +97,27 @@ def _reject_if_draining(
     return True
 
 
+def _abort_connection(client_socket: socket.socket, error: OSError) -> None:
+    """Drop a single connection that raised during admission, never the server.
+
+    Socket writes in the admission path (the 503 rejection/draining responses)
+    can raise when a peer resets the connection; without isolation that
+    exception would unwind the accept loop and terminate the whole process
+    (an unauthenticated remote DoS). Log and close, then keep serving.
+    """
+    ACCEPT_LOGGER.warning(
+        "Dropping client after I/O error during admission",
+        extra={
+            "event": "accept_connection_error",
+            "error_type": type(error).__name__,
+        },
+    )
+    try:
+        client_socket.close()
+    except OSError:
+        pass
+
+
 def _run_accept_loop(
     server_socket: socket.socket,
     lifecycle: LifecycleState,
@@ -110,12 +132,14 @@ def _run_accept_loop(
             continue
 
         client_socket, client_address = accepted
-        if _reject_if_draining(lifecycle, client_socket, handler_context):
-            continue
-
-        _handle_accepted_client(
-            client_socket, client_address, connection_limiter, handler_context
-        )
+        try:
+            if _reject_if_draining(lifecycle, client_socket, handler_context):
+                continue
+            _handle_accepted_client(
+                client_socket, client_address, connection_limiter, handler_context
+            )
+        except OSError as error:
+            _abort_connection(client_socket, error)
 
 
 def _finish_shutdown(
@@ -131,7 +155,16 @@ def _finish_shutdown(
             "grace_seconds": config.shutdown_grace_seconds,
         },
     )
-    lifecycle.wait_for_workers(config.shutdown_grace_seconds)
+    completed = lifecycle.wait_for_workers(config.shutdown_grace_seconds)
+    if not completed:
+        ACCEPT_LOGGER.warning(
+            "Grace period expired; forcing shutdown and dropping active connections",
+            extra={
+                "event": "shutdown_forced",
+                "grace_seconds": config.shutdown_grace_seconds,
+            },
+        )
+        os._exit(0)
     ACCEPT_LOGGER.info("Server shutdown complete", extra={"event": "server_stopped"})
 
 

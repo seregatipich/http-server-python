@@ -11,19 +11,48 @@ SOCKET_LOGGER = logging.getLogger("http_server.socket")
 
 
 def create_server_socket(args: argparse.Namespace) -> socket.socket:
-    """Create the server socket, optionally wrapping it in TLS."""
+    """Create the plain listening socket.
+
+    The listener is never TLS-wrapped: wrapping it makes accept() run the full
+    TLS handshake synchronously on the single accept thread, so one silent peer
+    blocks every other client (a pre-auth listener DoS). TLS is instead applied
+    per connection inside the worker thread via ``establish_tls``.
+    """
     server_socket = socket.create_server((args.host, args.port), reuse_port=True)
     server_socket.settimeout(0.5)
+    return server_socket
+
+
+def build_tls_context(args: argparse.Namespace) -> ssl.SSLContext | None:
+    """Build the server SSL context, or None when TLS is not configured."""
     if not (args.cert and args.key):
-        return server_socket
+        return None
     try:
-        context = _build_tls_context(args)
-        return context.wrap_socket(server_socket, server_side=True)
+        return _build_tls_context(args)
     except (ssl.SSLError, OSError) as error:
         SOCKET_LOGGER.critical(
             "Failed to load TLS certificates", extra={"error": str(error)}
         )
         sys.exit(1)
+
+
+def establish_tls(
+    plain_socket: socket.socket,
+    context: ssl.SSLContext,
+    handshake_timeout: float | None,
+) -> ssl.SSLSocket:
+    """Wrap an accepted socket and complete the TLS handshake in the worker.
+
+    The handshake is bounded by ``handshake_timeout`` so a slow or silent peer
+    cannot pin the worker indefinitely; it runs here (not on the accept thread)
+    so the listener keeps accepting other connections.
+    """
+    tls_socket = context.wrap_socket(
+        plain_socket, server_side=True, do_handshake_on_connect=False
+    )
+    tls_socket.settimeout(handshake_timeout)
+    tls_socket.do_handshake()
+    return tls_socket
 
 
 def _build_tls_context(args: argparse.Namespace) -> ssl.SSLContext:

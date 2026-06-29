@@ -264,7 +264,9 @@ When the server receives `SIGTERM` or `SIGINT` (Ctrl+C):
 2. `/healthz` immediately returns `503 Service Unavailable` with body `draining`.
 3. New connection attempts receive `503` responses.
 4. In-flight requests are allowed to complete within the grace period.
-5. After the grace period expires (default 30 seconds), the server exits.
+5. After the grace period expires (default 30 seconds), the server force-exits,
+   dropping any connections still open (e.g. idle keep-alive or WebSocket) so
+   shutdown never hangs past the configured grace window.
 
 ### 9.3 Configuration
 

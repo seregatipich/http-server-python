@@ -1,6 +1,7 @@
 """Unit tests for static file and sandbox index route handlers."""
 
 import mimetypes
+import os
 
 import pytest
 
@@ -54,6 +55,50 @@ def test_get_existing_file_streams_with_content_length(ctx, tmp_path):
     assert response.headers["Accept-Ranges"] == "bytes"
     assert response.headers["ETag"]
     assert response.headers["Last-Modified"]
+
+
+def test_concurrent_post_does_not_desync_in_flight_read(ctx, tmp_path):
+    """A POST rewriting a file mid-stream must not corrupt an in-flight GET body."""
+    original = b"X" * 200_000
+    (tmp_path / "doc.bin").write_bytes(original)
+    handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
+
+    response = handler(make_request(path="/files/doc.bin"), ctx)
+    stream = response.body_iter
+    first_chunk = next(stream)
+    handler(make_request(method="POST", path="/files/doc.bin", body=b"Y" * 5), ctx)
+    body = first_chunk + b"".join(stream)
+
+    assert len(body) == response.content_length
+    assert body == original
+
+
+def test_get_content_length_matches_body_when_file_replaced_mid_response(ctx, tmp_path):
+    """An atomic replace between header and stream must keep Content-Length == body."""
+    original = b"A" * 1000
+    target = tmp_path / "data.bin"
+    target.write_bytes(original)
+    handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
+
+    response = handler(make_request(path="/files/data.bin"), ctx)
+
+    replacement = tmp_path / ".incoming"
+    replacement.write_bytes(b"B" * 10)
+    os.replace(replacement, target)
+
+    body = b"".join(response.body_iter)
+    assert len(body) == response.content_length
+    assert body == original
+
+
+def test_post_write_leaves_no_temp_file(ctx, tmp_path):
+    """The atomic write path persists the body and cleans up its temporary file."""
+    handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
+
+    handler(make_request(method="POST", path="/files/out.bin", body=b"payload"), ctx)
+
+    assert (tmp_path / "out.bin").read_bytes() == b"payload"
+    assert [p.name for p in tmp_path.iterdir()] == ["out.bin"]
 
 
 def test_post_persists_bytes_and_creates_parent_dirs(ctx, tmp_path):

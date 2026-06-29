@@ -48,6 +48,39 @@ class FakeDraining:
         return True
 
 
+class TimingOutChannel:
+    """Channel double whose reads always time out, like an idle/slow peer."""
+
+    def __init__(self) -> None:
+        self.outbound = bytearray()
+        self.closed = False
+
+    def read(self, _size: int) -> bytes:
+        raise TimeoutError("recv timed out")
+
+    def write(self, data: bytes) -> None:
+        self.outbound.extend(data)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_read_timeout_while_draining_sends_going_away() -> None:
+    channel = TimingOutChannel()
+    make_ws_echo_driver(FakeDraining(True), RecordingLogger())(channel)
+    opcode, payload = _parse_server_frame(bytes(channel.outbound))
+    assert opcode == OPCODE_CLOSE
+    assert struct.unpack("!H", payload[:2])[0] == 1001
+    assert channel.closed is True
+
+
+def test_read_timeout_when_idle_closes_without_hanging() -> None:
+    channel = TimingOutChannel()
+    make_ws_echo_driver(FakeDraining(False), RecordingLogger())(channel)
+    assert channel.closed is True
+    assert bytes(channel.outbound) == b""
+
+
 def _client_frame(opcode: int, payload: bytes, fin: bool = True) -> bytes:
     mask = b"\x01\x02\x03\x04"
     masked = bytes(byte ^ mask[i % 4] for i, byte in enumerate(payload))

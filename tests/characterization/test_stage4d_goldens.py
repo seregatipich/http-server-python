@@ -34,6 +34,7 @@ def _bare_context() -> MagicMock:
     context.authenticator = None
     context.session_store = None
     context.session_policy = None
+    context.tls_context = None
     return context
 
 
