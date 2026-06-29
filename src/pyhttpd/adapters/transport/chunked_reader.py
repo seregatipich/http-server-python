@@ -102,10 +102,10 @@ def read_chunked_body(
         size_line = reader.read_line(MAX_CHUNK_SIZE_LINE)
         if size_line is None:
             return None, b""
-        # rstrip tolerates optional whitespace before a chunk extension but keeps
-        # a leading space inside the token, so _parse_chunk_size rejects it as
-        # non-hex rather than silently accepting a non-RFC chunk-size line.
-        chunk_size = _parse_chunk_size(size_line.split(b";", 1)[0].rstrip())
+        # The chunk-size token must be bare hex (RFC 9112 7.1): no surrounding
+        # whitespace or control octets before the optional ";" chunk-extension,
+        # so _parse_chunk_size rejects anything but hex digits.
+        chunk_size = _parse_chunk_size(size_line.split(b";", 1)[0])
         if chunk_size == 0:
             if _consume_trailers(reader) is None:
                 return None, b""

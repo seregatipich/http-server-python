@@ -107,6 +107,50 @@ def test_rate_limit_enforced_raises() -> None:
         run_middleware(limiter, make_request())
 
 
+def _drive_logged(limiter, logger, request):
+    middleware = make_rate_limit_middleware(
+        limiter, logger, lambda forwarded_request, ctx: "127.0.0.1"
+    )
+    ctx = RequestContext(correlation_id=None, start_ns=0)
+    try:
+        middleware(request, ctx, lambda *_: PASSTHROUGH)
+    except RateLimited:
+        pass
+
+
+def test_rate_limit_dry_run_logs_breach() -> None:
+    """A dry-run breach is logged (not silently ignored) without blocking."""
+    limiter = make_limiter(dry_run=True)
+    run_middleware(limiter, make_request())  # spend the only token
+    logger = Mock()
+    _drive_logged(limiter, logger, make_request())
+    events = [call.args[1] for call in logger.log.call_args_list]
+    assert "rate_limit_dry_run" in events
+
+
+def test_rate_limit_enforced_logs_real_header_values() -> None:
+    """The enforced log records the actual RateLimit-* header keys, not nulls."""
+    limiter = make_limiter()
+    run_middleware(limiter, make_request())  # spend the only token
+    logger = Mock()
+    _drive_logged(limiter, logger, make_request())
+    enforced = next(
+        call
+        for call in logger.log.call_args_list
+        if call.args[1] == "rate_limit_enforced"
+    )
+    headers = enforced.kwargs["rate_limit_headers"]
+    assert headers["RateLimit-Limit"] == "1"
+    assert headers["RateLimit-Remaining"] == "0"
+    assert headers["RateLimit-Reset"] is not None
+
+
+def test_fresh_bucket_reset_reports_remaining_window() -> None:
+    """A brand-new bucket reports a non-zero time-to-reset, not 0 (off-by-one)."""
+    decision = make_limiter().consume("203.0.113.1")
+    assert decision.reset_seconds > 0
+
+
 def test_consume_with_zero_rate_limit_always_allows() -> None:
     """A limiter built with rate_limit=0 allows every request with no headers."""
     limiter = TokenBucketLimiter(

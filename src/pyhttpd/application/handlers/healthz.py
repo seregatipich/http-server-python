@@ -12,6 +12,7 @@ from pyhttpd.domain import (
     HttpResponse,
     Logger,
     MethodNotAllowed,
+    should_close,
 )
 
 RouteHandler = Callable[[HttpRequest, RequestContext], HttpResponse]
@@ -30,6 +31,8 @@ def make_healthz_handler(
             draining_state.is_draining() if draining_state is not None else False
         )
         logger.log(logging.INFO, "healthz_check", draining=is_draining)
-        return healthz_response(is_draining, SECURITY_HEADERS)
+        return healthz_response(
+            is_draining, SECURITY_HEADERS, should_close(request.headers)
+        )
 
     return handle

@@ -13,6 +13,7 @@ from typing import Iterator, Optional
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.rendering import RouteHandler
 from pyhttpd.domain import (
+    SECURITY_HEADERS,
     DrainingState,
     HttpRequest,
     HttpResponse,
@@ -38,7 +39,11 @@ def make_sse_handler(
         logger.log(logging.DEBUG, "sse_stream_started", count=count)
         return HttpResponse(
             "HTTP/1.1 200 OK",
-            {"Content-Type": "text/event-stream", "Cache-Control": "no-cache"},
+            {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                **SECURITY_HEADERS,
+            },
             b"",
             close_connection=True,
             body_iter=_event_stream(draining_state, count),

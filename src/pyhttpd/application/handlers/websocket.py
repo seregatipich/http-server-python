@@ -6,8 +6,20 @@ from typing import Optional
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.handlers.ws_echo import make_ws_echo_driver
 from pyhttpd.application.rendering import RouteHandler
-from pyhttpd.domain import BadRequest, DrainingState, HttpRequest, HttpResponse, Logger
-from pyhttpd.domain.websocket import compute_accept, is_websocket_upgrade
+from pyhttpd.domain import (
+    BadRequest,
+    DrainingState,
+    HttpRequest,
+    HttpResponse,
+    Logger,
+    UpgradeRequired,
+)
+from pyhttpd.domain.websocket import (
+    WEBSOCKET_VERSION,
+    compute_accept,
+    is_websocket_upgrade,
+    requests_websocket_upgrade,
+)
 
 
 def make_websocket_handler(
@@ -18,6 +30,12 @@ def make_websocket_handler(
 
     def handle(request: HttpRequest, _ctx: RequestContext) -> HttpResponse:
         if not is_websocket_upgrade(request.headers):
+            if (
+                requests_websocket_upgrade(request.headers)
+                and request.headers.get("sec-websocket-version", "")
+                != WEBSOCKET_VERSION
+            ):
+                raise UpgradeRequired(WEBSOCKET_VERSION)
             raise BadRequest("invalid websocket upgrade request")
         accept = compute_accept(request.headers["sec-websocket-key"])
         logger.log(logging.INFO, "websocket_upgrade")

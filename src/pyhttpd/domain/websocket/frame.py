@@ -17,6 +17,20 @@ OPCODE_CLOSE = 0x8
 OPCODE_PING = 0x9
 OPCODE_PONG = 0xA
 
+_VALID_OPCODES = frozenset(
+    {
+        OPCODE_CONTINUATION,
+        OPCODE_TEXT,
+        OPCODE_BINARY,
+        OPCODE_CLOSE,
+        OPCODE_PING,
+        OPCODE_PONG,
+    }
+)
+
+# RFC 6455 7.4.1: codes the endpoint may send/receive, plus the 3000-4999 range.
+_VALID_CLOSE_CODES = frozenset({1000, 1001, 1002, 1003, 1007, 1008, 1009, 1010, 1011})
+
 MAX_PAYLOAD_BYTES = 1 << 20
 
 
@@ -58,6 +72,8 @@ def decode_frame(buffer: bytes) -> Optional[Tuple[Frame, int]]:
         raise ValueError("client frames must be masked")
     fin = bool(first & 0x80)
     opcode = first & 0x0F
+    if opcode not in _VALID_OPCODES:
+        raise ValueError("reserved or unknown opcode")
     length, offset = _decode_length(buffer, second & 0x7F)
     if length is None:
         return None
@@ -82,6 +98,26 @@ def _decode_length(buffer: bytes, indicator: int) -> Tuple[Optional[int], int]:
             return None, 10
         return struct.unpack_from("!Q", buffer, 2)[0], 10
     return indicator, 2
+
+
+def is_valid_close_payload(payload: bytes) -> bool:
+    """Validate a Close-frame payload per RFC 6455 5.5.1 / 7.4.
+
+    Empty is valid; otherwise it must carry a 2-byte status code from the
+    permitted set (or the 3000-4999 range) followed by a valid UTF-8 reason.
+    """
+    if not payload:
+        return True
+    if len(payload) < 2:
+        return False
+    code = (payload[0] << 8) | payload[1]
+    if code not in _VALID_CLOSE_CODES and not 3000 <= code <= 4999:
+        return False
+    try:
+        payload[2:].decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return True
 
 
 def _unmask(data: bytes, mask: bytes) -> bytes:

@@ -45,7 +45,8 @@ def make_proxy_dispatch(
 
 def _match(targets: Sequence[ProxyTarget], path: str) -> Optional[ProxyTarget]:
     for target in targets:
-        if path == target.mount.rstrip("/") or path.startswith(target.mount):
+        mount = target.mount.rstrip("/")
+        if path == mount or path.startswith(mount + "/"):
             return target
     return None
 
@@ -58,7 +59,7 @@ def _proxy(
     timeout: float,
     logger: Logger,
 ) -> HttpResponse:
-    path = upstream_path(target, request.path, request.query)
+    path = upstream_path(target, request.raw_path or request.path, request.query)
     headers = filter_request_headers(request.headers, target, client_ip, "http")
     logger.log(
         logging.INFO, "proxy_forward", mount=target.mount, upstream=target.authority

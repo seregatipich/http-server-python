@@ -68,6 +68,31 @@ def test_filter_request_headers_appends_to_existing_forwarded_for() -> None:
     assert out["X-Forwarded-For"] == "9.9.9.9, 1.2.3.4"
 
 
+def test_filter_request_headers_dedupes_client_forwarding_headers() -> None:
+    target = parse_proxy_pass("/api/=http://b:80")
+    headers = {
+        "x-forwarded-for": "9.9.9.9",
+        "x-forwarded-proto": "https",
+        "x-forwarded-host": "evil.example",
+        "via": "1.1 attacker",
+    }
+    out = filter_request_headers(headers, target, "1.2.3.4", "http")
+    # No client-controlled forwarding header survives verbatim alongside the
+    # proxy's canonical values (SSRF-02: previously both lines hit the wire).
+    assert "x-forwarded-for" not in out
+    assert "x-forwarded-proto" not in out
+    assert "x-forwarded-host" not in out
+    assert "via" not in out
+    assert out["X-Forwarded-For"] == "9.9.9.9, 1.2.3.4"
+    assert out["X-Forwarded-Proto"] == "http"
+    assert out["Via"] == "1.1 pyhttpd"
+
+
+def test_upstream_path_preserves_percent_encoding() -> None:
+    target = parse_proxy_pass("/api/=http://b:80/v1")
+    assert upstream_path(target, "/api/a%2Fb", "") == "/v1/a%2Fb"
+
+
 def test_filter_response_headers_strips_hop_by_hop() -> None:
     out = filter_response_headers(
         {

@@ -13,7 +13,7 @@ from urllib.parse import unquote
 
 from pyhttpd.application.context import RequestContext
 from pyhttpd.application.frame_stream import BufferedFrameReader
-from pyhttpd.domain import Channel, HttpRequest, HttpResponse
+from pyhttpd.domain import DEFAULT_MAX_BODY_BYTES, Channel, HttpRequest, HttpResponse
 from pyhttpd.domain.http2.frames import (
     CONNECTION_PREFACE,
     CONTINUATION,
@@ -39,7 +39,12 @@ from pyhttpd.domain.http2.hpack import Decoder, encode_headers
 READ_SIZE = 65536
 MAX_FRAME_SIZE = 16384
 INITIAL_WINDOW = 65535
+MAX_HEADER_LIST_SIZE = 64 * 1024
+MAX_WINDOW = 2**31 - 1
 ERROR_PROTOCOL = 1
+ERROR_FLOW_CONTROL = 3
+ERROR_FRAME_SIZE = 6
+ERROR_ENHANCE_YOUR_CALM = 11
 _SKIP_RESPONSE_HEADERS = frozenset(
     {"connection", "keep-alive", "transfer-encoding", "upgrade", "content-length"}
 )
@@ -60,14 +65,19 @@ class Http2Connection:  # pylint: disable=too-many-instance-attributes
     """Drives one HTTP/2 connection, dispatching each stream to the chain."""
 
     def __init__(
-        self, channel: Channel, dispatch: Dispatch, make_context: ContextFactory
+        self,
+        channel: Channel,
+        dispatch: Dispatch,
+        make_context: ContextFactory,
+        max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     ) -> None:
         self._channel = channel
         self._dispatch = dispatch
         self._make_context = make_context
+        self._max_body_bytes = max_body_bytes
         self._decoder = Decoder()
         self._reader: BufferedFrameReader[Frame] = BufferedFrameReader(
-            channel, decode_frame, READ_SIZE
+            channel, self._decode_frame, READ_SIZE
         )
         self._streams: Dict[int, _Stream] = {}
         self._send_window = INITIAL_WINDOW
@@ -77,24 +87,32 @@ class Http2Connection:  # pylint: disable=too-many-instance-attributes
             WINDOW_UPDATE: self._on_window_update,
             GOAWAY: self._on_goaway,
             RST_STREAM: self._on_reset,
-            PRIORITY: self._on_reset,
+            PRIORITY: self._on_priority,
             HEADERS: self._on_headers,
             CONTINUATION: self._on_continuation,
             DATA: self._on_data,
         }
 
+    def _decode_frame(self, buffer: bytes) -> Optional[Tuple[Frame, int]]:
+        return decode_frame(buffer, MAX_FRAME_SIZE)
+
     def serve(self, initial: bytes = b"") -> None:
         """Run the connection until the peer disconnects or sends GOAWAY."""
         self._reader = BufferedFrameReader(
-            self._channel, decode_frame, READ_SIZE, initial
+            self._channel, self._decode_frame, READ_SIZE, initial
         )
         if self._reader.read_exact(len(CONNECTION_PREFACE)) != CONNECTION_PREFACE:
             return
         self._write(SETTINGS, 0, 0, b"")
         try:
             self._run()
-        except (OSError, ConnectionError, ValueError):
+        except (OSError, ConnectionError):
             pass
+        except (ValueError, IndexError, struct.error):
+            # A malformed frame, padding, HPACK block, or resource-limit breach:
+            # tell the peer the connection is going away instead of crashing the
+            # worker with an unhandled exception.
+            self._goaway(ERROR_PROTOCOL)
 
     def _run(self) -> None:
         while True:
@@ -116,8 +134,15 @@ class Http2Connection:  # pylint: disable=too-many-instance-attributes
         return True
 
     def _on_window_update(self, frame: Frame) -> bool:
+        if len(frame.payload) < 4:
+            self._goaway(ERROR_FRAME_SIZE)
+            return False
+        increment = struct.unpack("!I", frame.payload[:4])[0] & 0x7FFFFFFF
         if frame.stream_id == 0:
-            self._send_window += struct.unpack("!I", frame.payload[:4])[0]
+            self._send_window += increment
+            if self._send_window > MAX_WINDOW:
+                self._goaway(ERROR_FLOW_CONTROL)
+                return False
         return True
 
     def _on_goaway(self, _frame: Frame) -> bool:
@@ -127,17 +152,34 @@ class Http2Connection:  # pylint: disable=too-many-instance-attributes
         self._streams.pop(frame.stream_id, None)
         return True
 
+    def _on_priority(self, _frame: Frame) -> bool:
+        # PRIORITY carries only prioritization hints and must not affect stream
+        # state; treating it like RST would silently drop an in-flight request.
+        return True
+
     def _on_headers(self, frame: Frame) -> bool:
+        if frame.stream_id == 0 or frame.stream_id % 2 == 0:
+            self._goaway(ERROR_PROTOCOL)
+            return False
         stream = self._streams.setdefault(frame.stream_id, _Stream())
         stream.header_block.extend(_header_block_fragment(frame))
+        if not self._within_header_limit(stream):
+            return False
         if frame.flags & FLAG_END_STREAM:
             return self._complete(frame.stream_id)
         return True
 
     def _on_continuation(self, frame: Frame) -> bool:
         stream = self._streams.get(frame.stream_id)
-        if stream is not None:
-            stream.header_block.extend(frame.payload)
+        if stream is None:
+            return True
+        stream.header_block.extend(frame.payload)
+        return self._within_header_limit(stream)
+
+    def _within_header_limit(self, stream: "_Stream") -> bool:
+        if len(stream.header_block) > MAX_HEADER_LIST_SIZE:
+            self._goaway(ERROR_ENHANCE_YOUR_CALM)
+            return False
         return True
 
     def _on_data(self, frame: Frame) -> bool:
@@ -145,9 +187,24 @@ class Http2Connection:  # pylint: disable=too-many-instance-attributes
         if stream is None:
             return True
         stream.body.extend(_data_payload(frame))
+        if len(stream.body) > self._max_body_bytes:
+            self._streams.pop(frame.stream_id, None)
+            self._write(
+                RST_STREAM,
+                0,
+                frame.stream_id,
+                struct.pack("!I", ERROR_ENHANCE_YOUR_CALM),
+            )
+            return True
         if frame.flags & FLAG_END_STREAM:
             return self._complete(frame.stream_id)
         return True
+
+    def _goaway(self, error_code: int) -> None:
+        try:
+            self._write(GOAWAY, 0, 0, struct.pack("!II", 0, error_code))
+        except (OSError, ConnectionError):
+            pass
 
     def _complete(self, stream_id: int) -> bool:
         stream = self._streams.pop(stream_id, None)

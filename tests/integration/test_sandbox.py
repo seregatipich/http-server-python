@@ -48,8 +48,8 @@ def test_forbid_directory_traversal_post(
 def test_forbid_empty_filename(
     server_process: "ServerProcessInfo",
 ) -> None:
-    """Reject empty filenames under the files endpoint."""
+    """Without autoindex, the sandbox root has no document and returns 404."""
     host, port = server_process["host"], server_process["port"]
     raw_request = b"GET /files/ HTTP/1.1\r\nHost: test\r\n\r\n"
     response = _send_raw_request(host, port, raw_request)
-    assert response.status_line.startswith("HTTP/1.1 403")
+    assert response.status_line.startswith("HTTP/1.1 404")

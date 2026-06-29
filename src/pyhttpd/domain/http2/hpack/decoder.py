@@ -14,6 +14,7 @@ class Decoder:
     """Stateful HPACK decoder holding the dynamic table across header blocks."""
 
     def __init__(self, max_dynamic_size: int = 4096) -> None:
+        self._limit = max_dynamic_size
         self._dynamic = DynamicTable(max_dynamic_size)
 
     def decode(self, block: bytes) -> List[Header]:
@@ -28,6 +29,8 @@ class Decoder:
                 offset = self._literal(block, offset, 6, headers, index=True)
             elif first & 0x20:
                 size, offset = decode_integer(block, offset, 5)
+                if size > self._limit:
+                    raise ValueError("dynamic table size update exceeds limit")
                 self._dynamic.resize(size)
             else:
                 offset = self._literal(block, offset, 4, headers, index=False)

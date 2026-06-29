@@ -22,6 +22,7 @@ from pyhttpd.domain.websocket import (
     Frame,
     decode_frame,
     encode_frame,
+    is_valid_close_payload,
 )
 
 CLOSE_GOING_AWAY = 1001
@@ -97,7 +98,10 @@ def _run_echo(channel: Channel, draining_state: Optional[DrainingState]) -> None
             _send_close(channel, CLOSE_GOING_AWAY)
             return
         if frame.opcode == OPCODE_CLOSE:
-            channel.write(encode_frame(OPCODE_CLOSE, frame.payload))
+            if is_valid_close_payload(frame.payload):
+                channel.write(encode_frame(OPCODE_CLOSE, frame.payload))
+            else:
+                _send_close(channel, CLOSE_PROTOCOL_ERROR)
             return
         if frame.opcode == OPCODE_PING:
             channel.write(encode_frame(OPCODE_PONG, frame.payload))
