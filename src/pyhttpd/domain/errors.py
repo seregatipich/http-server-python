@@ -75,6 +75,17 @@ class RequestTimeout(HttpError):
     reason = "Request Timeout"
 
 
+class UpgradeRequired(HttpError):
+    """Raised when a client requests a protocol upgrade with an unsupported version."""
+
+    status = 426
+    reason = "Upgrade Required"
+
+    def __init__(self, websocket_version: str) -> None:
+        super().__init__()
+        self.websocket_version = websocket_version
+
+
 class RateLimited(HttpError):
     """Raised when a client exceeds the configured rate limit."""
 
