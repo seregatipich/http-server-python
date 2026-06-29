@@ -7,11 +7,16 @@ PASSTHROUGH = object()
 
 
 def make_request(
-    path="/", method="GET", headers=None, body=b"", query=""
+    path="/", method="GET", headers=None, body=b"", query="", raw_path=""
 ) -> HttpRequest:
     """Build a minimal HttpRequest test double with sane defaults."""
     return HttpRequest(
-        method=method, path=path, headers=headers or {}, body=body, query=query
+        method=method,
+        path=path,
+        headers=headers or {},
+        body=body,
+        query=query,
+        raw_path=raw_path,
     )
 
 

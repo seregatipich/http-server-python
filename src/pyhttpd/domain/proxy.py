@@ -74,14 +74,33 @@ def upstream_path(target: ProxyTarget, request_path: str, query: str) -> str:
     return f"{path}?{query}" if query else path
 
 
+def _is_proxy_managed_header(name: str) -> bool:
+    """Headers the proxy sets itself; inbound copies are dropped to avoid spoofing."""
+    lower = name.lower()
+    return (
+        lower == "host"
+        or lower.startswith("x-forwarded-")
+        or lower
+        in (
+            "via",
+            "forwarded",
+        )
+    )
+
+
 def filter_request_headers(
     headers: Dict[str, str], target: ProxyTarget, client_ip: str, scheme: str
 ) -> Dict[str, str]:
-    """Strip hop-by-hop headers and set forwarding headers for the upstream."""
+    """Strip hop-by-hop headers and set forwarding headers for the upstream.
+
+    Client-supplied forwarding headers (X-Forwarded-*, Via, Forwarded) are
+    dropped case-insensitively before the canonical values are set, so a client
+    cannot smuggle a second, conflicting forwarding header to the upstream.
+    """
     forwarded = {
         name: value
         for name, value in headers.items()
-        if name.lower() not in HOP_BY_HOP_HEADERS and name.lower() != "host"
+        if name.lower() not in HOP_BY_HOP_HEADERS and not _is_proxy_managed_header(name)
     }
     forwarded["Host"] = target.authority
     existing = headers.get("x-forwarded-for")

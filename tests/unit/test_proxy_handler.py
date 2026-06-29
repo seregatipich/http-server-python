@@ -67,6 +67,31 @@ def test_proxied_response_chunked_without_content_length() -> None:
     assert response.content_length is None
 
 
+def test_mount_match_respects_segment_boundary() -> None:
+    targets = (parse_proxy_pass("/api=http://backend:80"),)
+
+    def forwarder(*_args):
+        raise AssertionError("/apisecret must not match the /api mount")
+
+    dispatch = make_proxy_dispatch(
+        targets, forwarder, "1.2.3.4", 5.0, RecordingLogger(), _fallback
+    )
+    response = dispatch(make_request(path="/apisecret"), make_context())
+    assert response.body == b"fallback"
+
+
+def test_proxy_forwards_raw_encoded_path() -> None:
+    captured: dict[str, object] = {}
+
+    def forwarder(_target, _method, path, _headers, _body, _timeout):
+        captured["path"] = path
+        return UpstreamResponse(200, "OK", {"Content-Length": "0"}, iter([b""]))
+
+    request = make_request(path="/api/a/b", raw_path="/api/a%2Fb")
+    _dispatch(forwarder)(request, make_context())
+    assert captured["path"] == "/a%2Fb"
+
+
 def test_upstream_error_propagates_for_central_mapping() -> None:
     def forwarder(*_args):
         raise BadGateway("upstream down")

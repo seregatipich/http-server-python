@@ -5,7 +5,7 @@ import socket
 import ssl
 from typing import Dict, Iterator
 
-from pyhttpd.domain import BadGateway, GatewayTimeout
+from pyhttpd.domain import BadGateway, BadRequest, GatewayTimeout
 from pyhttpd.domain.proxy import ProxyTarget, UpstreamResponse
 
 _STREAM_CHUNK = 65536
@@ -27,6 +27,11 @@ def forward(
     except (TimeoutError, socket.timeout) as exc:
         connection.close()
         raise GatewayTimeout("upstream timed out") from exc
+    except UnicodeEncodeError as exc:
+        connection.close()
+        raise BadRequest(
+            "request contains characters the upstream cannot accept"
+        ) from exc
     except (OSError, http.client.HTTPException) as exc:
         connection.close()
         raise BadGateway("upstream request failed") from exc

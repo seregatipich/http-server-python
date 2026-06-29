@@ -216,6 +216,15 @@ def test_receive_request_rejects_conflicting_content_length():
         receive_request(client, b"")
 
 
+def test_receive_request_preserves_raw_encoded_path():
+    """The raw (still-encoded) path is kept so a reverse proxy can forward it."""
+    request_bytes = b"GET /api/a%2Fb HTTP/1.1\r\nHost: x\r\n\r\n"
+    request, _ = receive_request(FakeSocket([request_bytes]), b"")
+    assert request is not None
+    assert request.path == "/api/a/b"
+    assert request.raw_path == "/api/a%2Fb"
+
+
 def test_receive_request_rejects_whitespace_before_colon():
     """A space between field-name and colon (RFC 9112 5.1) is a framing risk -> 400."""
     request_bytes = b"GET / HTTP/1.1\r\nHost: x\r\nContent-Length : 0\r\n\r\n"

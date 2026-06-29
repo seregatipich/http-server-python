@@ -225,6 +225,7 @@ class _RequestHead(NamedTuple):
     method: str
     path: str
     query: str
+    raw_path: str
     headers: dict[str, str]
     is_chunked: bool
     remainder: bytes
@@ -265,9 +266,10 @@ def _parse_request_head(buffer: bytes, allow_chunked: bool) -> _RequestHead:
     _reject_malformed_header_lines(header_lines)
     method, path, query = parse_request_line(header_lines[0])
     _validate_host(header_lines[0], header_lines[1:])
+    raw_path = urllib.parse.urlsplit(header_lines[0].split(" ", 2)[1]).path
     headers = parse_headers(header_lines[1:])
     is_chunked = _reject_ambiguous_framing(header_lines[1:], allow_chunked)
-    return _RequestHead(method, path, query, headers, is_chunked, remainder)
+    return _RequestHead(method, path, query, raw_path, headers, is_chunked, remainder)
 
 
 def _propagate_correlation_id(headers: dict[str, str]) -> None:
@@ -308,7 +310,9 @@ def receive_request(
         return None, b""
     IO_LOGGER.debug("Parsed request", extra={"method": head.method, "path": head.path})
     return (
-        HttpRequest(head.method, head.path, head.headers, body, head.query),
+        HttpRequest(
+            head.method, head.path, head.headers, body, head.query, head.raw_path
+        ),
         leftover,
     )
 
