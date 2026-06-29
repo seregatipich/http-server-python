@@ -6,6 +6,7 @@ from pyhttpd.adapters.config.file_config import (
     apply_overlay,
     load_config_file,
     reapply_overlay,
+    record_explicit_flags,
 )
 
 
@@ -47,3 +48,17 @@ def test_reapply_overlay_sets_known_keys_only() -> None:
     reapply_overlay(namespace, {"error_format": "json", "unknown": 1})
     assert namespace.error_format == "json"
     assert not hasattr(namespace, "unknown")
+
+
+def test_reapply_overlay_preserves_explicit_cli_flags() -> None:
+    namespace = Namespace(error_format="text")
+    record_explicit_flags(namespace, ["--error-format", "text"])
+    reapply_overlay(namespace, {"error_format": "json"})
+    assert namespace.error_format == "text"
+
+
+def test_reapply_overlay_updates_fields_not_set_on_cli() -> None:
+    namespace = Namespace(error_format="text")
+    record_explicit_flags(namespace, [])
+    reapply_overlay(namespace, {"error_format": "json"})
+    assert namespace.error_format == "json"
