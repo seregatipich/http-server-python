@@ -70,7 +70,9 @@ def test_healthz_returns_200_during_normal_operation(server_process_info):
         response = read_http_response(sock)
         assert response.status_line == "HTTP/1.1 200 OK"
         assert response.body == b""
-        assert "strict-transport-security" in response.headers
+        # HSTS is omitted over plaintext (RFC 6797 7.2); other headers remain.
+        assert "strict-transport-security" not in response.headers
+        assert "x-content-type-options" in response.headers
 
 
 def test_healthz_returns_503_during_draining(server_process_info):

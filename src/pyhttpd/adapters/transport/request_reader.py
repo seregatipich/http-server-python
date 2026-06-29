@@ -31,6 +31,29 @@ from pyhttpd.domain import (
 
 __all__ = ["_read_request_with_validation", "_recv_with_deadline"]
 
+_DRAIN_MAX_BYTES = 65536
+
+
+def _drain_pending(client_socket: socket.socket) -> None:
+    """Drain already-buffered client bytes (non-blocking) after a rejection.
+
+    A burst that overflows the header cap leaves unread bytes in the receive
+    buffer; closing then would RST and could drop the just-sent error response
+    before the client reads it (RFC 9112 9.6). Draining what is already buffered
+    lets the response land. It is non-blocking, so a slow client never extends
+    the worker, and bytes-only so it is a no-op against non-socket doubles.
+    """
+    try:
+        client_socket.setblocking(False)
+        drained = 0
+        while drained < _DRAIN_MAX_BYTES:
+            chunk = client_socket.recv(min(4096, _DRAIN_MAX_BYTES - drained))
+            if not isinstance(chunk, (bytes, bytearray)) or not chunk:
+                break
+            drained += len(chunk)
+    except (BlockingIOError, OSError):
+        pass
+
 
 def _reject(
     client_socket: socket.socket,
@@ -48,6 +71,7 @@ def _reject(
     send_response(
         client_socket, apply_error_format(response, error_format, get_correlation_id())
     )
+    _drain_pending(client_socket)
     return None, b"", True
 
 
@@ -98,6 +122,7 @@ def _read_request_with_validation(
                 get_correlation_id(),
             ),
         )
+        _drain_pending(client_socket)
         return None, b"", True
     except ForbiddenPath:
         return _reject(

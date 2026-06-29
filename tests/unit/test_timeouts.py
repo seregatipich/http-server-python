@@ -8,9 +8,19 @@ from unittest.mock import Mock
 import pytest
 
 from pyhttpd.adapters import ServerLifecycle
-from pyhttpd.adapters.config import ServerConfig
+from pyhttpd.adapters.config import ServerConfig, parse_cli_args
 from pyhttpd.adapters.transport import _recv_with_deadline
 from pyhttpd.domain import RequestTimeout
+from pyhttpd.wiring import _create_phase_timeouts
+
+
+def test_phase_timeouts_are_bounded_by_socket_timeout():
+    """A tight --socket-timeout must also bound the header/body/handler phases."""
+    args = parse_cli_args(["--directory", ".", "--socket-timeout", "5"])
+    phase_timeouts = _create_phase_timeouts(args)
+    assert phase_timeouts.header_read_seconds <= 5
+    assert phase_timeouts.body_read_seconds <= 5
+    assert phase_timeouts.handler_seconds <= 5
 
 
 class TestRecvWithDeadline:

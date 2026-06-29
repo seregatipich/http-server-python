@@ -14,6 +14,10 @@ pytestmark = pytest.mark.integration
 
 def _assert_security_headers(headers: dict[str, str]) -> None:
     for name, expected in SECURITY_HEADERS.items():
+        if name == "Strict-Transport-Security":
+            # HSTS is omitted over plaintext (RFC 6797 7.2); this server is HTTP.
+            assert name not in headers
+            continue
         assert headers[name] == expected
 
 

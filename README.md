@@ -14,7 +14,7 @@ Threaded HTTP/1.1 server with echo, user-agent inspection, configurable file IO,
 - **File uploads and downloads**: `POST /files/<path>` writes raw bytes to the configured directory and `GET /files/<path>` streams content via `Transfer-Encoding: chunked` for large artifacts.
 - **Authentication and authorization**: opt-in api-key or hand-rolled HS256 JWT auth (zero dependencies) with scope-based access control on `/files/*`.
 - **Transport security**: Passing `--cert` and `--key` enables TLS 1.3 termination directly in the server process.
-- **Security headers**: Strict-Transport-Security, Content-Security-Policy, and X-Content-Type-Options are attached to every response, including 404s.
+- **Security headers**: Content-Security-Policy and X-Content-Type-Options are attached to every response, including 404s; Strict-Transport-Security is added only over TLS, since it is inert and non-conformant over plaintext (RFC 6797 §7.2).
 - **Request validation and sandboxing**: `/files/*` is restricted to the configured root, blocking traversal (`..`) and null bytes; uploads enforce `Content-Length` and reject bodies over `HTTP_SERVER_MAX_BODY_BYTES` (default 5 MiB).
 - **Structured logging**: `pyhttpd.adapters.logging.setup.configure_logging()` wires a shared logger hierarchy (`http_server.*`) with configurable destinations and levels.
 - **Connection and rate limiting**: configurable caps for total sockets, per-IP concurrency, and token-bucket request throttling with standards-based RateLimit headers.
