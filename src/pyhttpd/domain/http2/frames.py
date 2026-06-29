@@ -48,11 +48,20 @@ def encode_frame(
     return header + payload
 
 
-def decode_frame(buffer: bytes) -> Optional[Tuple[Frame, int]]:
-    """Decode one frame, returning (frame, bytes_consumed) or None if incomplete."""
+def decode_frame(
+    buffer: bytes, max_frame_size: Optional[int] = None
+) -> Optional[Tuple[Frame, int]]:
+    """Decode one frame, returning (frame, bytes_consumed) or None if incomplete.
+
+    When ``max_frame_size`` is set, a frame whose declared length exceeds it is
+    rejected as soon as the 9-byte header is available, so an oversized frame
+    cannot be buffered in full (RFC 7540 SETTINGS_MAX_FRAME_SIZE / FRAME_SIZE).
+    """
     if len(buffer) < FRAME_HEADER_SIZE:
         return None
     length = int.from_bytes(buffer[0:3], "big")
+    if max_frame_size is not None and length > max_frame_size:
+        raise ValueError("frame exceeds SETTINGS_MAX_FRAME_SIZE")
     frame_type = buffer[3]
     flags = buffer[4]
     stream_id = struct.unpack("!I", buffer[5:9])[0] & 0x7FFFFFFF
