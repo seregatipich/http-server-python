@@ -64,6 +64,25 @@ def test_decode_hs256_rejects_malformed_token():
         decode_hs256("not.a.valid.jwt.token", SECRET, now=1000)
 
 
+def test_decode_hs256_rejects_non_utf8_payload():
+    """A correctly signed but non-UTF-8 payload yields InvalidToken, not a crash."""
+    header_segment = _b64(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    payload_segment = _b64(b"\x80\x81\x82\x83")
+    signing_input = f"{header_segment}.{payload_segment}"
+    signature = _b64(
+        hmac.new(SECRET.encode(), signing_input.encode(), hashlib.sha256).digest()
+    )
+    with pytest.raises(InvalidToken):
+        decode_hs256(f"{signing_input}.{signature}", SECRET, now=1000)
+
+
+def test_decode_hs256_rejects_non_finite_exp():
+    """An Infinity exp must be rejected, not treated as a never-expiring token."""
+    token = _encode({"sub": "reader", "exp": float("inf")})
+    with pytest.raises(InvalidToken):
+        decode_hs256(token, SECRET, now=1000)
+
+
 def test_decode_hs256_requires_exp_and_rejects_expired():
     """Expired tokens and tokens missing exp are rejected."""
     expired = _encode({"sub": "reader", "exp": 500})

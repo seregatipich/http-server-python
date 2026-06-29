@@ -7,7 +7,9 @@ import pytest
 
 from pyhttpd.application import make_files_handler, make_index_handler
 from pyhttpd.domain import (
+    FileServingOptions,
     Forbidden,
+    HttpError,
     HttpResponse,
     MethodNotAllowed,
     NotFound,
@@ -19,7 +21,7 @@ def _event_names(logger):
     return [event for _, event, _ in logger.events]
 
 
-@pytest.mark.parametrize("path", ["/files/", "/files/../x", "/files/a/../b"])
+@pytest.mark.parametrize("path", ["/files/../x", "/files/a/../b"])
 def test_invalid_routes_raise_forbidden_and_log(ctx, tmp_path, path):
     """Invalid file routes raise Forbidden and emit a route_invalid event."""
     logger = RecordingLogger()
@@ -99,6 +101,101 @@ def test_post_write_leaves_no_temp_file(ctx, tmp_path):
 
     assert (tmp_path / "out.bin").read_bytes() == b"payload"
     assert [p.name for p in tmp_path.iterdir()] == ["out.bin"]
+
+
+def test_get_response_advertises_vary_accept_encoding(ctx, tmp_path):
+    """Identity responses must advertise Vary so caches key on Accept-Encoding."""
+    (tmp_path / "d.txt").write_bytes(b"x" * 50)
+    handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
+    response = handler(make_request(path="/files/d.txt"), ctx)
+    assert response.headers["Vary"] == "Accept-Encoding"
+
+
+def test_gzip_variant_uses_a_distinct_etag(ctx, tmp_path):
+    """The gzip representation must not share the identity ETag (cache safety)."""
+    (tmp_path / "d.txt").write_text("hello world " * 50)
+    options = FileServingOptions(gzip=True, gzip_min_bytes=1)
+    handler = make_files_handler(
+        str(tmp_path), RecordingLogger(), cors_config=None, options=options
+    )
+    identity = handler(make_request(path="/files/d.txt"), ctx)
+    gzipped = handler(
+        make_request(path="/files/d.txt", headers={"accept-encoding": "gzip"}), ctx
+    )
+    assert gzipped.headers["Content-Encoding"] == "gzip"
+    assert gzipped.headers["ETag"] != identity.headers["ETag"]
+
+
+def test_if_range_mismatch_serves_full_content(ctx, tmp_path):
+    """A non-matching If-Range must serve the full 200, not a 206 with bad data."""
+    (tmp_path / "d.bin").write_bytes(b"0123456789")
+    handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
+    response = handler(
+        make_request(
+            path="/files/d.bin",
+            headers={"range": "bytes=0-4", "if-range": '"stale-etag"'},
+        ),
+        ctx,
+    )
+    assert response.status_line == "HTTP/1.1 200 OK"
+
+
+def test_if_range_match_serves_partial_content(ctx, tmp_path):
+    """A matching If-Range validator still yields a 206."""
+    (tmp_path / "d.bin").write_bytes(b"0123456789")
+    handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
+    etag = handler(make_request(path="/files/d.bin"), ctx).headers["ETag"]
+    response = handler(
+        make_request(
+            path="/files/d.bin", headers={"range": "bytes=0-4", "if-range": etag}
+        ),
+        ctx,
+    )
+    assert response.status_line == "HTTP/1.1 206 Partial Content"
+
+
+def test_post_to_directory_returns_client_error(ctx, tmp_path):
+    """POST onto a directory path yields a 4xx, never an unhandled 500."""
+    (tmp_path / "sub").mkdir()
+    handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
+    with pytest.raises(HttpError) as exc_info:
+        handler(make_request(method="POST", path="/files/sub", body=b"x"), ctx)
+    assert 400 <= exc_info.value.status < 500
+
+
+def test_post_under_file_parent_returns_client_error(ctx, tmp_path):
+    """POST under a path whose parent is a file yields a 4xx, not a 500."""
+    (tmp_path / "afile").write_bytes(b"x")
+    handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
+    with pytest.raises(HttpError) as exc_info:
+        handler(make_request(method="POST", path="/files/afile/child", body=b"x"), ctx)
+    assert 400 <= exc_info.value.status < 500
+
+
+def test_overlong_path_returns_client_error(ctx, tmp_path):
+    """An over-long path component yields a 4xx, not an unhandled OSError 500."""
+    handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
+    with pytest.raises(HttpError) as exc_info:
+        handler(make_request(path="/files/" + "a" * 5000), ctx)
+    assert 400 <= exc_info.value.status < 500
+
+
+def test_autoindex_lists_sandbox_root(ctx, tmp_path):
+    """With autoindex enabled, /files/ lists the sandbox root instead of 403."""
+    (tmp_path / "a.txt").write_bytes(b"x")
+    options = FileServingOptions(autoindex=True)
+    handler = make_files_handler(
+        str(tmp_path), RecordingLogger(), cors_config=None, options=options
+    )
+    response = handler(make_request(path="/files/"), ctx)
+    assert response.status_line == "HTTP/1.1 200 OK"
+
+
+def test_root_without_autoindex_is_not_found(ctx, tmp_path):
+    """Without autoindex, /files/ is a 404 (a directory has no document)."""
+    handler = make_files_handler(str(tmp_path), RecordingLogger(), cors_config=None)
+    with pytest.raises(NotFound):
+        handler(make_request(path="/files/"), ctx)
 
 
 def test_post_persists_bytes_and_creates_parent_dirs(ctx, tmp_path):

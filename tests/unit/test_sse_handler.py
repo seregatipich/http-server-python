@@ -60,6 +60,8 @@ def test_handler_returns_streaming_event_stream_response() -> None:
     assert response.headers["Cache-Control"] == "no-cache"
     assert response.streaming is True
     assert response.use_chunked is True
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert "Content-Security-Policy" in response.headers
     with patch("pyhttpd.application.handlers.sse.time.sleep"):
         assert len(list(response.body_iter)) == 2
 

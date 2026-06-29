@@ -1,5 +1,6 @@
 """Handlers for static file serving and the sandbox index."""
 
+import errno
 import gzip
 import logging
 import mimetypes
@@ -15,11 +16,13 @@ from pyhttpd.application.rendering import accepts_gzip, empty_response
 from pyhttpd.domain import (
     FILES_ENDPOINT_PREFIX,
     SECURITY_HEADERS,
+    BadRequest,
     ByteRange,
     CorsConfig,
     FileServingOptions,
     Forbidden,
     ForbiddenPath,
+    HttpError,
     HttpRequest,
     HttpResponse,
     Logger,
@@ -29,6 +32,7 @@ from pyhttpd.domain import (
     compute_etag,
     http_date,
     is_not_modified,
+    parse_http_date,
     parse_range,
     resolve_sandbox_path,
     should_close,
@@ -41,12 +45,35 @@ _DEFAULT_OPTIONS = FileServingOptions()
 
 
 def _is_invalid_file_route(remainder: str) -> bool:
+    # An empty remainder is the sandbox root, served by autoindex (or 404), not
+    # an invalid route; traversal attempts remain rejected.
     return (
-        not remainder
-        or remainder.startswith("../")
-        or "/../" in remainder
-        or remainder.startswith("..")
+        remainder.startswith("../") or "/../" in remainder or remainder.startswith("..")
     )
+
+
+def _client_error_for(error: OSError) -> Optional[HttpError]:
+    """Map a client-caused filesystem error to a 4xx, or None for a server fault."""
+    if isinstance(error, IsADirectoryError):
+        return Forbidden("directory access denied")
+    if isinstance(error, (NotADirectoryError, FileExistsError)):
+        return BadRequest("invalid file path")
+    if error.errno == errno.ENAMETOOLONG:
+        return BadRequest("path too long")
+    return None
+
+
+def _if_range_satisfied(
+    request_headers: dict[str, str], etag: str, mtime_epoch: float
+) -> bool:
+    """Return whether an If-Range precondition permits serving a partial response."""
+    if_range = request_headers.get("if-range", "").strip()
+    if not if_range:
+        return True
+    if if_range.startswith('"') or if_range.startswith("W/"):
+        return if_range == etag
+    parsed = parse_http_date(if_range)
+    return parsed is not None and int(mtime_epoch) <= int(parsed)
 
 
 def _content_type_for_path(
@@ -156,6 +183,7 @@ def _base_file_headers(
         "ETag": etag,
         "Last-Modified": http_date(mtime_epoch),
         "Accept-Ranges": "bytes",
+        "Vary": "Accept-Encoding",
         **SECURITY_HEADERS,
     }
     if options.cache_control:
@@ -170,7 +198,7 @@ def _not_modified_response(
     headers = {
         key: value
         for key, value in headers.items()
-        if key in {"ETag", "Last-Modified", "Cache-Control", *SECURITY_HEADERS}
+        if key in {"ETag", "Last-Modified", "Cache-Control", "Vary", *SECURITY_HEADERS}
     }
     return HttpResponse(
         "HTTP/1.1 304 Not Modified",
@@ -209,6 +237,10 @@ def _gzip_response(
     headers = dict(headers)
     headers["Content-Encoding"] = "gzip"
     headers["Vary"] = "Accept-Encoding"
+    if "ETag" in headers:
+        # Distinguish the gzip representation so a cache cannot serve it for an
+        # identity request keyed on the same ETag.
+        headers["ETag"] = headers["ETag"].rstrip('"') + '-gzip"'
     return HttpResponse(
         "HTTP/1.1 200 OK",
         headers,
@@ -285,7 +317,9 @@ def _build_file_response(
         return _not_modified_response(request, headers), False
 
     range_header = request.headers.get("range", "")
-    if range_header:
+    if range_header and _if_range_satisfied(
+        request.headers, etag, stat_result.st_mtime
+    ):
         parsed = parse_range(range_header, file_size)
         if isinstance(parsed, ByteRange):
             return (
@@ -407,16 +441,7 @@ def make_files_handler(
     """Build a handler serving and writing files under the sandbox directory."""
     options = options or _DEFAULT_OPTIONS
 
-    def handle(request: HttpRequest, _ctx: RequestContext) -> HttpResponse:
-        remainder = request.path[len(FILES_ENDPOINT_PREFIX) :]
-        if _is_invalid_file_route(remainder):
-            logger.log(logging.WARNING, "route_invalid", route=request.path)
-            raise Forbidden("invalid file path")
-        try:
-            resolved_path = resolve_sandbox_path(directory, remainder)
-        except ForbiddenPath as exc:
-            logger.log(logging.WARNING, "forbidden_path", path=remainder)
-            raise Forbidden("forbidden path") from exc
+    def dispatch(request: HttpRequest, resolved_path: Path) -> HttpResponse:
         if request.method == "GET":
             return _get_file_response(
                 request, resolved_path, logger, cors_config, options
@@ -430,6 +455,33 @@ def make_files_handler(
         if request.method == "DELETE":
             return _delete_file_response(request, resolved_path, logger, cors_config)
         return _unsupported_file_method(request, resolved_path, logger)
+
+    def handle(request: HttpRequest, _ctx: RequestContext) -> HttpResponse:
+        remainder = request.path[len(FILES_ENDPOINT_PREFIX) :]
+        if _is_invalid_file_route(remainder):
+            logger.log(logging.WARNING, "route_invalid", route=request.path)
+            raise Forbidden("invalid file path")
+        try:
+            resolved_path = (
+                Path(directory).resolve()
+                if not remainder
+                else resolve_sandbox_path(directory, remainder)
+            )
+            return dispatch(request, resolved_path)
+        except ForbiddenPath as exc:
+            logger.log(logging.WARNING, "forbidden_path", path=remainder)
+            raise Forbidden("forbidden path") from exc
+        except OSError as error:
+            mapped = _client_error_for(error)
+            if mapped is None:
+                raise
+            logger.log(
+                logging.WARNING,
+                "file_io_error",
+                path=remainder,
+                error_type=type(error).__name__,
+            )
+            raise mapped from error
 
     return handle
 
