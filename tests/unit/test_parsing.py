@@ -216,6 +216,64 @@ def test_receive_request_rejects_conflicting_content_length():
         receive_request(client, b"")
 
 
+def test_receive_request_rejects_whitespace_before_colon():
+    """A space between field-name and colon (RFC 9112 5.1) is a framing risk -> 400."""
+    request_bytes = b"GET / HTTP/1.1\r\nHost: x\r\nContent-Length : 0\r\n\r\n"
+    with pytest.raises(ValueError):
+        receive_request(FakeSocket([request_bytes]), b"")
+
+
+def test_receive_request_rejects_obs_fold_continuation():
+    """An obs-fold continuation line (RFC 9112 5.2) must be rejected."""
+    request_bytes = b"GET / HTTP/1.1\r\nHost: x\r\nX-Test: a\r\n folded\r\n\r\n"
+    with pytest.raises(ValueError):
+        receive_request(FakeSocket([request_bytes]), b"")
+
+
+def test_receive_request_rejects_bare_lf_in_header_value():
+    """A bare LF in a header value enables response splitting and must be rejected."""
+    request_bytes = (
+        b"GET / HTTP/1.1\r\nHost: x\r\nX-Request-ID: abc\nSet-Cookie: p=1\r\n\r\n"
+    )
+    with pytest.raises(ValueError):
+        receive_request(FakeSocket([request_bytes]), b"")
+
+
+def test_receive_request_rejects_nul_in_header():
+    """A NUL byte in a header line must be rejected."""
+    request_bytes = b"GET / HTTP/1.1\r\nHost: x\r\nX-Test: a\x00b\r\n\r\n"
+    with pytest.raises(ValueError):
+        receive_request(FakeSocket([request_bytes]), b"")
+
+
+def test_parse_request_line_rejects_unsupported_version():
+    """An unsupported or garbage HTTP version must raise ValueError."""
+    with pytest.raises(ValueError):
+        parse_request_line("GET / HTTP/2.0")
+    with pytest.raises(ValueError):
+        parse_request_line("GET / BANANA")
+
+
+def test_parse_request_line_accepts_http_1_0_and_1_1():
+    """Both HTTP/1.0 and HTTP/1.1 request lines parse successfully."""
+    assert parse_request_line("GET / HTTP/1.0") == ("GET", "/", "")
+    assert parse_request_line("GET / HTTP/1.1") == ("GET", "/", "")
+
+
+def test_receive_request_requires_host_on_http_1_1():
+    """An HTTP/1.1 request without a Host header must be rejected."""
+    request_bytes = b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n"
+    with pytest.raises(ValueError):
+        receive_request(FakeSocket([request_bytes]), b"")
+
+
+def test_receive_request_rejects_duplicate_host():
+    """Two Host headers desync virtual-host routing and must be rejected."""
+    request_bytes = b"GET / HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n"
+    with pytest.raises(ValueError):
+        receive_request(FakeSocket([request_bytes]), b"")
+
+
 def test_receive_request_propagates_incoming_correlation_id():
     """An incoming X-Request-ID header must populate correlation state."""
 

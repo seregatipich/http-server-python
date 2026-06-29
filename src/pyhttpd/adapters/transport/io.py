@@ -47,12 +47,19 @@ def parse_headers(lines: list[str]) -> dict[str, str]:
     return parsed
 
 
+_SUPPORTED_HTTP_VERSIONS = ("HTTP/1.0", "HTTP/1.1")
+_HEADER_CONTROL_CHARS = ("\x00", "\r", "\n")
+
+
 def parse_request_line(request_line: str) -> Tuple[str, str, str]:
     """Parse the HTTP method, sanitized path, and raw query from the request line."""
     try:
-        method, target, _ = request_line.split(" ", 2)
+        method, target, version = request_line.split(" ", 2)
     except ValueError as exc:
         raise ValueError("Invalid request line") from exc
+
+    if version not in _SUPPORTED_HTTP_VERSIONS:
+        raise ValueError("Unsupported HTTP version")
 
     parsed_target = urllib.parse.urlsplit(target)
     path = urllib.parse.unquote(parsed_target.path)
@@ -223,10 +230,41 @@ class _RequestHead(NamedTuple):
     remainder: bytes
 
 
+def _reject_malformed_header_lines(header_lines: list[str]) -> None:
+    """Reject obs-fold, whitespace-before-colon, and embedded control characters.
+
+    Lines are already split on CRLF, so any remaining CR/LF is a bare control
+    byte that a discrepant downstream could re-frame (response splitting); an
+    obs-fold continuation or whitespace before the colon are RFC 9112 5.1/5.2
+    MUST-violations that enable request smuggling.
+    """
+    for line in header_lines:
+        if any(control in line for control in _HEADER_CONTROL_CHARS):
+            raise ValueError("control character in header line")
+    for line in header_lines[1:]:
+        if line[:1] in (" ", "\t"):
+            raise ValueError("obs-fold continuation is not allowed")
+        if ":" in line:
+            name = line.split(":", 1)[0]
+            if name.strip() and name != name.rstrip():
+                raise ValueError("whitespace before header colon")
+
+
+def _validate_host(request_line: str, header_lines: list[str]) -> None:
+    """Enforce a single Host header (required on HTTP/1.1) per RFC 9112 3.2."""
+    hosts = _header_values(header_lines, "host")
+    if len(hosts) > 1:
+        raise ValueError("multiple Host headers")
+    if request_line.endswith("HTTP/1.1") and not hosts:
+        raise ValueError("missing Host header")
+
+
 def _parse_request_head(buffer: bytes, allow_chunked: bool) -> _RequestHead:
     header_block, remainder = buffer.split(HEADER_DELIMITER, 1)
     header_lines = header_block.decode().split("\r\n")
+    _reject_malformed_header_lines(header_lines)
     method, path, query = parse_request_line(header_lines[0])
+    _validate_host(header_lines[0], header_lines[1:])
     headers = parse_headers(header_lines[1:])
     is_chunked = _reject_ambiguous_framing(header_lines[1:], allow_chunked)
     return _RequestHead(method, path, query, headers, is_chunked, remainder)
@@ -234,7 +272,9 @@ def _parse_request_head(buffer: bytes, allow_chunked: bool) -> _RequestHead:
 
 def _propagate_correlation_id(headers: dict[str, str]) -> None:
     incoming_correlation_id = headers.get("x-request-id")
-    if incoming_correlation_id:
+    if incoming_correlation_id and not any(
+        control in incoming_correlation_id for control in _HEADER_CONTROL_CHARS
+    ):
         set_correlation_id(incoming_correlation_id)
 
 
