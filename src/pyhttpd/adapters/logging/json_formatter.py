@@ -13,7 +13,6 @@ class JsonFormatter(logging.Formatter):
     """JSON formatter with stable key ordering for structured logging."""
 
     def __init__(self, datefmt: Optional[str] = None):
-        """Initialize JSON formatter with optional date format."""
         super().__init__(datefmt=datefmt)
 
     def format(self, record: logging.LogRecord) -> str:
