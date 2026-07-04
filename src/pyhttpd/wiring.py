@@ -44,7 +44,6 @@ WIRING_LOGGER = logging.getLogger("http_server.main")
 
 
 def _create_cors_config(args: argparse.Namespace) -> CorsConfig:
-    """Create CORS configuration from CLI arguments."""
     return CorsConfig(
         allowed_origins=[
             o.strip() for o in args.cors_allowed_origins.split(",") if o.strip()
@@ -74,7 +73,6 @@ def _parse_pairs(raw: str) -> dict[str, str]:
 
 
 def _create_auth_config(args: argparse.Namespace) -> AuthConfig:
-    """Create authentication configuration from CLI arguments."""
     roles = {
         identity: [scope for scope in spec.split("|") if scope]
         for identity, spec in _parse_pairs(args.auth_roles).items()
@@ -90,7 +88,6 @@ def _create_auth_config(args: argparse.Namespace) -> AuthConfig:
 
 
 def _create_authenticator(args: argparse.Namespace) -> Optional[Authenticator]:
-    """Create the configured authenticator, or None when auth is disabled."""
     if args.auth_mode == "none":
         return None
     config = _create_auth_config(args)
@@ -114,7 +111,6 @@ def _create_client_cert_roles(args: argparse.Namespace) -> Optional[dict[str, li
 
 
 def _create_rate_limiter(args: argparse.Namespace) -> Optional[TokenBucketLimiter]:
-    """Create rate limiter if configured."""
     if args.rate_limit > 0 and args.rate_window_ms > 0:
         return TokenBucketLimiter(
             TokenBucketSettings(
@@ -128,7 +124,6 @@ def _create_rate_limiter(args: argparse.Namespace) -> Optional[TokenBucketLimite
 
 
 def _create_metrics_sink(args: argparse.Namespace) -> Optional[MetricsSink]:
-    """Create the metrics sink when metrics are enabled, else None."""
     return LockingMetricsSink() if args.metrics else None
 
 
@@ -153,7 +148,6 @@ def _create_access_logger(args: argparse.Namespace) -> Optional[AccessLogger]:
 
 
 def _create_file_options(args: argparse.Namespace) -> FileServingOptions:
-    """Create static file serving options from CLI arguments."""
     return FileServingOptions(
         cache_control=args.file_cache_control,
         gzip=args.file_gzip,
@@ -164,14 +158,12 @@ def _create_file_options(args: argparse.Namespace) -> FileServingOptions:
 
 
 def _create_session_store(args: argparse.Namespace) -> Optional[InMemorySessionStore]:
-    """Create the session store when a session secret is configured."""
     if not args.session_secret:
         return None
     return InMemorySessionStore(ttl_seconds=args.session_ttl)
 
 
 def _create_session_policy(args: argparse.Namespace) -> Optional[SessionCookiePolicy]:
-    """Create the session cookie policy when sessions are enabled."""
     if not args.session_secret:
         return None
     return SessionCookiePolicy(
@@ -239,7 +231,6 @@ def _create_worker_context(
     connection_limiter: ConnectionLimiter,
     metrics_sink: Optional[MetricsSink] = None,
 ) -> WorkerContext:
-    """Assemble the shared worker context from parsed arguments."""
     return WorkerContext(
         directory=args.directory,
         connection_limiter=connection_limiter,
@@ -269,7 +260,6 @@ def _create_worker_context(
 
 
 def _apply_reloadable_config(context: WorkerContext, args: argparse.Namespace) -> None:
-    """Swap the SIGHUP-reloadable fields on the shared worker context."""
     context.error_format = args.error_format
     context.cors_config = _create_cors_config(args)
     context.file_options = _create_file_options(args)

@@ -39,4 +39,3 @@ Dockerfile
 docker-compose.yml
 .dockerignore
 Makefile
-requirements.txt

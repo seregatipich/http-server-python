@@ -78,7 +78,6 @@ class ServerConfig:
 
 
 def _add_logging_args(parser: argparse.ArgumentParser) -> None:
-    """Add logging configuration arguments."""
     default_log_level = os.getenv("HTTP_SERVER_LOG_LEVEL", "INFO").upper()
     default_destination = os.getenv("HTTP_SERVER_LOG_DESTINATION", "stdout")
     parser.add_argument(
@@ -95,7 +94,6 @@ def _add_logging_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_connection_limit_args(parser: argparse.ArgumentParser) -> None:
-    """Add connection and rate-limit arguments."""
     parser.add_argument(
         "--max-connections",
         type=int,
@@ -135,7 +133,6 @@ def _add_connection_limit_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_timeout_args(parser: argparse.ArgumentParser) -> None:
-    """Add socket and shutdown timeout arguments."""
     parser.add_argument(
         "--socket-timeout",
         type=int,
@@ -169,7 +166,6 @@ def _add_timeout_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_cors_args(parser: argparse.ArgumentParser) -> None:
-    """Add CORS configuration arguments."""
     parser.add_argument(
         "--cors-allowed-origins",
         default=",".join(DEFAULT_CORS_ALLOWED_ORIGINS),
@@ -205,7 +201,6 @@ def _add_cors_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_auth_args(parser: argparse.ArgumentParser) -> None:
-    """Add authentication and authorization arguments."""
     parser.add_argument(
         "--auth-mode",
         choices=["none", "api-key", "basic", "jwt", "client-cert"],
@@ -240,7 +235,6 @@ def _add_auth_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_observability_args(parser: argparse.ArgumentParser) -> None:
-    """Add observability/metrics arguments."""
     parser.add_argument(
         "--metrics",
         action=argparse.BooleanOptionalAction,
@@ -280,7 +274,6 @@ def _add_observability_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_session_args(parser: argparse.ArgumentParser) -> None:
-    """Add signed-session-cookie arguments."""
     parser.add_argument(
         "--session-secret",
         default=DEFAULT_SESSION_SECRET,
@@ -307,7 +300,6 @@ def _add_session_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_vhost_args(parser: argparse.ArgumentParser) -> None:
-    """Add virtual-host routing arguments."""
     parser.add_argument(
         "--vhost",
         action="append",
@@ -318,7 +310,6 @@ def _add_vhost_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_proxy_args(parser: argparse.ArgumentParser) -> None:
-    """Add reverse-proxy arguments."""
     parser.add_argument(
         "--proxy-pass",
         action="append",
@@ -342,7 +333,6 @@ def _add_proxy_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_request_framing_args(parser: argparse.ArgumentParser) -> None:
-    """Add opt-in request-body framing arguments."""
     parser.add_argument(
         "--allow-chunked-requests",
         action=argparse.BooleanOptionalAction,
@@ -358,7 +348,6 @@ def _add_request_framing_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_file_serving_args(parser: argparse.ArgumentParser) -> None:
-    """Add static file serving arguments."""
     parser.add_argument(
         "--file-cache-control",
         default=DEFAULT_FILE_CACHE_CONTROL,

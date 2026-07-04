@@ -1,6 +1,9 @@
 """Unit tests for the composition root wiring."""
 
+import hashlib
 import socket
+
+import pytest
 
 from pyhttpd import composition
 from pyhttpd.adapters.auth import ApiKeyAuthenticator, JwtAuthenticator
@@ -8,14 +11,7 @@ from pyhttpd.adapters.config import ServerConfig, parse_cli_args
 from pyhttpd.adapters.ratelimit import TokenBucketLimiter
 from pyhttpd.adapters.transport import ConnectionLimiter, WorkerContext
 from pyhttpd.composition import Server, build_server
-from pyhttpd.domain import AuthConfig, CorsConfig
-from pyhttpd.wiring import (
-    _create_auth_config,
-    _create_authenticator,
-    _create_cors_config,
-    _create_rate_limiter,
-    _create_worker_context,
-)
+from pyhttpd.domain import CorsConfig
 
 
 def _args(tmp_path, extra=None):
@@ -26,127 +22,116 @@ def _args(tmp_path, extra=None):
     return parse_cli_args(argv)
 
 
-class _StubLifecycle:
-    """Minimal draining-state stand-in for worker context wiring."""
+@pytest.fixture
+def build(monkeypatch):
+    """Yield a builder that wires a real Server and closes its socket on teardown."""
+    monkeypatch.setattr(composition, "configure_logging", lambda *a, **k: None)
+    monkeypatch.setattr(composition.signal, "signal", lambda *a, **k: None)
+    built: list[Server] = []
 
-    def is_draining(self):
-        """Report not draining."""
-        return False
+    def _build(tmp_path, extra=None) -> Server:
+        server = build_server(_args(tmp_path, extra))
+        built.append(server)
+        return server
 
-    def should_stop(self):
-        """Report no stop requested."""
-        return False
-
-    def wait_for_workers(self, _timeout):
-        """Report workers joined."""
-        return True
+    yield _build
+    for server in built:
+        server.server_socket.close()
 
 
-def test_create_cors_config_splits_and_strips(tmp_path):
+def test_cors_origins_split_and_stripped(build, tmp_path):
     """CORS origin lists are comma-split with surrounding whitespace removed."""
-    args = _args(tmp_path, ["--cors-allowed-origins", "http://a.com , http://b.com"])
-    cors = _create_cors_config(args)
-    assert isinstance(cors, CorsConfig)
-    assert cors.allowed_origins == ["http://a.com", "http://b.com"]
+    context = build(
+        tmp_path, ["--cors-allowed-origins", "http://a.com , http://b.com"]
+    ).handler_context
+    assert context.cors_config.allowed_origins == ["http://a.com", "http://b.com"]
 
 
-def test_create_cors_config_drops_empty_entries(tmp_path):
+def test_cors_methods_drop_empty_entries(build, tmp_path):
     """Empty comma segments are filtered out of CORS lists."""
-    args = _args(tmp_path, ["--cors-allowed-methods", "GET, ,POST"])
-    assert _create_cors_config(args).allowed_methods == ["GET", "POST"]
+    context = build(tmp_path, ["--cors-allowed-methods", "GET, ,POST"]).handler_context
+    assert context.cors_config.allowed_methods == ["GET", "POST"]
 
 
-def test_create_rate_limiter_enabled(tmp_path):
+def test_rate_limiter_enabled(build, tmp_path):
     """A positive rate limit and window produce a token-bucket limiter."""
-    args = _args(tmp_path, ["--rate-limit", "5", "--rate-window-ms", "1000"])
-    assert isinstance(_create_rate_limiter(args), TokenBucketLimiter)
+    context = build(
+        tmp_path, ["--rate-limit", "5", "--rate-window-ms", "1000"]
+    ).handler_context
+    assert isinstance(context.rate_limiter, TokenBucketLimiter)
 
 
-def test_create_rate_limiter_disabled_when_rate_zero(tmp_path):
+def test_rate_limiter_disabled_when_rate_zero(build, tmp_path):
     """A zero rate limit disables rate limiting."""
-    assert _create_rate_limiter(_args(tmp_path, ["--rate-limit", "0"])) is None
+    assert build(tmp_path, ["--rate-limit", "0"]).handler_context.rate_limiter is None
 
 
-def test_create_rate_limiter_disabled_when_window_zero(tmp_path):
+def test_rate_limiter_disabled_when_window_zero(build, tmp_path):
     """A zero window disables rate limiting."""
-    args = _args(tmp_path, ["--rate-limit", "5", "--rate-window-ms", "0"])
-    assert _create_rate_limiter(args) is None
+    context = build(
+        tmp_path, ["--rate-limit", "5", "--rate-window-ms", "0"]
+    ).handler_context
+    assert context.rate_limiter is None
 
 
-def test_create_auth_config_parses_credentials_and_roles(tmp_path):
-    """Auth credentials and roles parse into identity-keyed mappings."""
-    args = _args(
+def test_auth_credentials_and_roles_drive_authentication(build, tmp_path):
+    """Comma-split credentials and pipe-split roles authenticate real API keys."""
+    reader_key, writer_key = "reader-key", "writer-key"
+    reader_hash = hashlib.sha256(reader_key.encode()).hexdigest()
+    writer_hash = hashlib.sha256(writer_key.encode()).hexdigest()
+    context = build(
         tmp_path,
         [
             "--auth-mode",
             "api-key",
             "--auth-credentials",
-            "reader:hashA, writer:hashB",
+            f"reader:{reader_hash}, writer:{writer_hash}",
             "--auth-roles",
             "reader:files:read, writer:files:read|files:write",
         ],
+    ).handler_context
+
+    reader = context.authenticator.authenticate(
+        {"authorization": f"ApiKey {reader_key}"}
     )
-    config = _create_auth_config(args)
-    assert isinstance(config, AuthConfig)
-    assert config.mode == "api-key"
-    assert config.credentials == {"reader": "hashA", "writer": "hashB"}
-    assert config.roles == {
-        "reader": ["files:read"],
-        "writer": ["files:read", "files:write"],
-    }
+    writer = context.authenticator.authenticate(
+        {"authorization": f"ApiKey {writer_key}"}
+    )
+
+    assert reader is not None and reader.identity == "reader"
+    assert reader.scopes == frozenset({"files:read"})
+    assert writer is not None and writer.identity == "writer"
+    assert writer.scopes == frozenset({"files:read", "files:write"})
 
 
-def test_create_authenticator_disabled_by_default(tmp_path):
+def test_authenticator_disabled_by_default(build, tmp_path):
     """With auth mode none the composition root builds no authenticator."""
-    assert _create_authenticator(_args(tmp_path)) is None
+    assert build(tmp_path).handler_context.authenticator is None
 
 
-def test_create_authenticator_api_key_mode(tmp_path):
-    """Api-key mode builds an ApiKeyAuthenticator."""
-    args = _args(tmp_path, ["--auth-mode", "api-key"])
-    assert isinstance(_create_authenticator(args), ApiKeyAuthenticator)
-
-
-def test_create_authenticator_jwt_mode(tmp_path):
-    """JWT mode builds a JwtAuthenticator."""
-    args = _args(tmp_path, ["--auth-mode", "jwt", "--jwt-secret", "s"])
-    assert isinstance(_create_authenticator(args), JwtAuthenticator)
-
-
-def test_create_worker_context_carries_authenticator(tmp_path):
-    """An enabled auth mode threads the authenticator into the worker context."""
-    args = _args(tmp_path, ["--auth-mode", "api-key"])
-    config = ServerConfig(socket_timeout=1, shutdown_grace_seconds=1)
-    limiter = ConnectionLimiter(args.max_connections, args.max_connections_per_ip)
-    context = _create_worker_context(args, config, _StubLifecycle(), limiter)
+def test_authenticator_api_key_mode(build, tmp_path):
+    """Api-key mode threads an ApiKeyAuthenticator into the worker context."""
+    context = build(
+        tmp_path, ["--auth-mode", "api-key", "--auth-credentials", "reader:deadbeef"]
+    ).handler_context
     assert isinstance(context.authenticator, ApiKeyAuthenticator)
 
 
-def test_create_worker_context_wires_collaborators(tmp_path):
-    """The worker context carries directory, limiter, and CORS config."""
-    args = _args(tmp_path)
-    config = ServerConfig(socket_timeout=1, shutdown_grace_seconds=1)
-    limiter = ConnectionLimiter(args.max_connections, args.max_connections_per_ip)
+def test_authenticator_jwt_mode(build, tmp_path):
+    """JWT mode threads a JwtAuthenticator into the worker context."""
+    context = build(
+        tmp_path, ["--auth-mode", "jwt", "--jwt-secret", "s"]
+    ).handler_context
+    assert isinstance(context.authenticator, JwtAuthenticator)
 
-    class _Lifecycle:
-        """Minimal draining-state stand-in."""
 
-        def is_draining(self):
-            """Report not draining."""
-            return False
-
-        def should_stop(self):
-            """Report no stop requested."""
-            return False
-
-        def wait_for_workers(self, _timeout):
-            """Report workers joined."""
-            return True
-
-    context = _create_worker_context(args, config, _Lifecycle(), limiter)
+def test_worker_context_wires_collaborators(build, tmp_path):
+    """The worker context carries directory, the shared limiter, and CORS config."""
+    server = build(tmp_path)
+    context = server.handler_context
     assert isinstance(context, WorkerContext)
     assert context.directory == str(tmp_path)
-    assert context.connection_limiter is limiter
+    assert context.connection_limiter is server.connection_limiter
     assert isinstance(context.cors_config, CorsConfig)
 
 

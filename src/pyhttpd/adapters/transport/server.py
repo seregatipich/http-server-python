@@ -27,7 +27,6 @@ def _handle_accepted_client(
     connection_limiter: ConnectionLimiter,
     handler_context: WorkerContext,
 ) -> None:
-    """Handle a newly accepted client connection."""
     client_addr_str = format_client_address(client_address)
     if ACCEPT_LOGGER.isEnabledFor(logging.DEBUG):
         ACCEPT_LOGGER.debug(
