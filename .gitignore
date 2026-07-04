@@ -13,7 +13,6 @@ Develop-eggs/
 *.log
 
 .env
-.venv
 .venv/
 env/
 venv/
@@ -36,7 +35,6 @@ htmlcov/
 Thumbs.db
 
 .http-test-artifacts/
-.pytest_cache/
 ai_docs/
 certs/
 .sentrux/
