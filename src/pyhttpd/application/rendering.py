@@ -4,7 +4,7 @@ import gzip
 import json
 import logging
 from collections.abc import Iterable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Callable, Optional, Tuple
 
 from pyhttpd.application.context import RequestContext
@@ -181,20 +181,6 @@ def make_text_handler(
     return handle
 
 
-def not_found_response(
-    request: Optional[HttpRequest],
-    cors_config: Optional[CorsConfig],
-    security_headers: dict[str, str],
-) -> HttpResponse:
-    """Return a 404 response reusing the connection preference."""
-    return _request_response(
-        "HTTP/1.1 404 Not Found",
-        request,
-        cors_config,
-        security_headers,
-    )
-
-
 def forbidden_response(
     request: Optional[HttpRequest],
     cors_config: Optional[CorsConfig],
@@ -242,18 +228,6 @@ def bad_request_response(
 def entity_too_large_response(security_headers: dict[str, str]) -> HttpResponse:
     """Produce a 413 response that always closes the connection."""
     return _basic_response("HTTP/1.1 413 Payload Too Large", security_headers)
-
-
-def upgrade_required_response(
-    websocket_version: str, security_headers: dict[str, str]
-) -> HttpResponse:
-    """Produce a 426 response advertising the supported WebSocket version."""
-    return _basic_response(
-        "HTTP/1.1 426 Upgrade Required",
-        security_headers,
-        b"Upgrade Required",
-        {"Sec-WebSocket-Version": websocket_version},
-    )
 
 
 def rate_limited_response(
@@ -330,22 +304,6 @@ def method_not_allowed_response(
     )
 
 
-def range_not_satisfiable_response(
-    file_size: int,
-    request: Optional[HttpRequest],
-    cors_config: Optional[CorsConfig],
-    security_headers: dict[str, str],
-) -> HttpResponse:
-    """Produce a 416 response advertising the valid byte extent."""
-    return _request_response(
-        "HTTP/1.1 416 Range Not Satisfiable",
-        request,
-        cors_config,
-        security_headers,
-        extra_headers={"Content-Range": f"bytes */{file_size}"},
-    )
-
-
 def request_timeout_response(security_headers: dict[str, str]) -> HttpResponse:
     """Produce a 408 response that always closes the connection."""
     return _basic_response(
@@ -363,28 +321,6 @@ def internal_error_response(
         "HTTP/1.1 500 Internal Server Error",
         security_headers,
         close_connection=_request_close_preference(request),
-    )
-
-
-def bad_gateway_response(
-    request: Optional[HttpRequest],
-    cors_config: Optional[CorsConfig],
-    security_headers: dict[str, str],
-) -> HttpResponse:
-    """Produce a 502 response when an upstream is unreachable or invalid."""
-    return _request_response(
-        "HTTP/1.1 502 Bad Gateway", request, cors_config, security_headers
-    )
-
-
-def gateway_timeout_response(
-    request: Optional[HttpRequest],
-    cors_config: Optional[CorsConfig],
-    security_headers: dict[str, str],
-) -> HttpResponse:
-    """Produce a 504 response when an upstream exceeds the deadline."""
-    return _request_response(
-        "HTTP/1.1 504 Gateway Timeout", request, cors_config, security_headers
     )
 
 
@@ -408,11 +344,94 @@ def apply_error_format(
     return replace(response, headers=headers, body=body, content_length=None)
 
 
+@dataclass(frozen=True)
+class _ErrorSpec:
+    builder: Optional[Callable[..., HttpResponse]] = None
+    body: bytes = b""
+    apply_cors: bool = True
+    close: Optional[bool] = None
+    dynamic_headers: Optional[Callable[..., dict[str, str]]] = None
+
+
+def _render_error(
+    error: HttpError,
+    spec: _ErrorSpec,
+    request: Optional[HttpRequest],
+    cors_config: Optional[CorsConfig],
+) -> HttpResponse:
+    if spec.builder is not None:
+        return spec.builder(error, request, cors_config)
+    extra = spec.dynamic_headers(error) if spec.dynamic_headers is not None else None
+    if spec.apply_cors:
+        return _request_response(
+            error.status_line,
+            request,
+            cors_config,
+            SECURITY_HEADERS,
+            spec.body,
+            extra,
+            spec.close,
+        )
+    close = _request_close_preference(request) if spec.close is None else spec.close
+    return _basic_response(error.status_line, SECURITY_HEADERS, spec.body, extra, close)
+
+
+_ERROR_TABLE: dict[type[HttpError], _ErrorSpec] = {
+    BadRequest: _ErrorSpec(
+        builder=lambda e, r, c: bad_request_response(r, c, SECURITY_HEADERS)
+    ),
+    Forbidden: _ErrorSpec(
+        builder=lambda e, r, c: forbidden_response(r, c, SECURITY_HEADERS)
+    ),
+    ForbiddenPath: _ErrorSpec(
+        builder=lambda e, r, c: forbidden_response(r, c, SECURITY_HEADERS)
+    ),
+    Unauthorized: _ErrorSpec(
+        builder=lambda e, r, c: unauthorized_response(
+            r, c, SECURITY_HEADERS, e.challenge
+        )
+    ),
+    MethodNotAllowed: _ErrorSpec(
+        builder=lambda e, r, c: method_not_allowed_response(
+            r, c, SECURITY_HEADERS, e.allowed
+        )
+    ),
+    RequestTimeout: _ErrorSpec(
+        builder=lambda e, r, c: request_timeout_response(SECURITY_HEADERS)
+    ),
+    RequestEntityTooLarge: _ErrorSpec(
+        builder=lambda e, r, c: entity_too_large_response(SECURITY_HEADERS)
+    ),
+    RateLimited: _ErrorSpec(
+        builder=lambda e, r, c: rate_limited_response(e.decision, r, SECURITY_HEADERS)
+    ),
+    ServiceUnavailable: _ErrorSpec(
+        builder=lambda e, r, c: draining_response(SECURITY_HEADERS)
+    ),
+    NotFound: _ErrorSpec(),
+    BadGateway: _ErrorSpec(),
+    GatewayTimeout: _ErrorSpec(),
+    RangeNotSatisfiable: _ErrorSpec(
+        dynamic_headers=lambda e: {"Content-Range": f"bytes */{e.file_size}"}
+    ),
+    UpgradeRequired: _ErrorSpec(
+        apply_cors=False,
+        close=True,
+        body=b"Upgrade Required",
+        dynamic_headers=lambda e: {"Sec-WebSocket-Version": e.websocket_version},
+    ),
+}
+
+_DEFAULT_SPEC = _ErrorSpec(
+    builder=lambda e, r, c: internal_error_response(r, SECURITY_HEADERS)
+)
+
+
 class ErrorMapper:
     """Dispatches domain errors to their byte-exact response builders."""
 
     @staticmethod
-    def to_response(  # pylint: disable=too-many-return-statements
+    def to_response(
         error: HttpError,
         request: Optional[HttpRequest],
         cors_config: Optional[CorsConfig],
@@ -424,44 +443,16 @@ class ErrorMapper:
         return apply_error_format(response, error_format, request_id)
 
     @staticmethod
-    def _build(  # pylint: disable=too-many-return-statements,too-many-branches
+    def _build(
         error: HttpError,
         request: Optional[HttpRequest],
         cors_config: Optional[CorsConfig],
     ) -> HttpResponse:
-        if isinstance(error, BadRequest):
-            return bad_request_response(request, cors_config, SECURITY_HEADERS)
-        if isinstance(error, Unauthorized):
-            return unauthorized_response(
-                request, cors_config, SECURITY_HEADERS, error.challenge
-            )
-        if isinstance(error, (Forbidden, ForbiddenPath)):
-            return forbidden_response(request, cors_config, SECURITY_HEADERS)
-        if isinstance(error, NotFound):
-            return not_found_response(request, cors_config, SECURITY_HEADERS)
-        if isinstance(error, MethodNotAllowed):
-            return method_not_allowed_response(
-                request, cors_config, SECURITY_HEADERS, error.allowed
-            )
-        if isinstance(error, RequestEntityTooLarge):
-            return entity_too_large_response(SECURITY_HEADERS)
-        if isinstance(error, RequestTimeout):
-            return request_timeout_response(SECURITY_HEADERS)
-        if isinstance(error, UpgradeRequired):
-            return upgrade_required_response(error.websocket_version, SECURITY_HEADERS)
-        if isinstance(error, RangeNotSatisfiable):
-            return range_not_satisfiable_response(
-                error.file_size, request, cors_config, SECURITY_HEADERS
-            )
-        if isinstance(error, RateLimited):
-            return rate_limited_response(error.decision, request, SECURITY_HEADERS)
-        if isinstance(error, ServiceUnavailable):
-            return draining_response(SECURITY_HEADERS)
-        if isinstance(error, BadGateway):
-            return bad_gateway_response(request, cors_config, SECURITY_HEADERS)
-        if isinstance(error, GatewayTimeout):
-            return gateway_timeout_response(request, cors_config, SECURITY_HEADERS)
-        return internal_error_response(request, SECURITY_HEADERS)
+        for klass in type(error).__mro__:
+            spec = _ERROR_TABLE.get(klass)
+            if spec is not None:
+                return _render_error(error, spec, request, cors_config)
+        return _render_error(error, _DEFAULT_SPEC, request, cors_config)
 
     @staticmethod
     def internal_error(
